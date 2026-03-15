@@ -2,6 +2,16 @@
 // Bicep-to-Terraform UI — shared TypeScript types
 // ---------------------------------------------------------------------------
 
+/** Token usage and cost info for a conversion/deployment run. */
+export interface CostInfo {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalCostUsd: number;
+  model: string;
+}
+
 /** Discriminated union for server-sent stream events. */
 export type StreamEvent =
   | { type: "text_delta"; text: string }
@@ -10,7 +20,7 @@ export type StreamEvent =
   | { type: "terraform_output"; files: TerraformFiles }
   | { type: "validation"; passed: boolean; output: string }
   | { type: "progress"; step: number; total: number; label: string }
-  | { type: "done"; fullReply: string; toolCalls: ToolCallInfo[] }
+  | { type: "done"; fullReply: string; toolCalls: ToolCallInfo[]; costInfo?: CostInfo; model?: string }
   | { type: "error"; message: string };
 
 /** Overall conversion lifecycle status. */
@@ -48,6 +58,12 @@ export interface ConversionHistoryEntry {
   validationPassed: boolean;
   agentConversation: ConversationMessage[];
   resourcesConverted: number;
+  /** Multi-file project fields */
+  isMultiFile?: boolean;
+  bicepFiles?: BicepFiles;
+  entryPoint?: string;
+  /** Number of Bicep files in the project (for display) */
+  bicepFileCount?: number;
 }
 
 /** A single message in the agent conversation log. */
@@ -84,7 +100,7 @@ export type DeployStreamEvent =
   | { type: "test_result"; testName: string; passed: boolean; detail: string }
   | { type: "outputs"; outputs: Record<string, string> }
   | { type: "progress"; step: number; total: number; label: string }
-  | { type: "done"; fullReply: string; toolCalls: ToolCallInfo[]; summary: DeploySummary }
+  | { type: "done"; fullReply: string; toolCalls: ToolCallInfo[]; summary: DeploySummary; costInfo?: CostInfo }
   | { type: "error"; message: string };
 
 /** Deployment lifecycle phases. */
@@ -128,4 +144,111 @@ export interface DeploymentProgress {
   step: number;
   total: number;
   label: string;
+}
+
+// ---------------------------------------------------------------------------
+// Security Scanning Types
+// ---------------------------------------------------------------------------
+
+/** A single finding from Trivy or similar scanner. */
+export interface ScanFinding {
+  ruleId: string;
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  title: string;
+  description: string;
+  resource: string;
+  file: string;
+  lines?: { start: number; end: number };
+  resolution?: string;
+}
+
+/** Result of a security scan. */
+export interface ScanResult {
+  passed: boolean;
+  findings: ScanFinding[];
+  scannedAt: string;
+  scanner: string;
+}
+
+// ---------------------------------------------------------------------------
+// OPA Policy Types
+// ---------------------------------------------------------------------------
+
+/** A single policy violation. */
+export interface PolicyViolation {
+  policy: string;
+  rule: string;
+  severity: "error" | "warning" | "info";
+  message: string;
+  resource?: string;
+}
+
+/** Result of OPA policy evaluation. */
+export interface PolicyResult {
+  passed: boolean;
+  violations: PolicyViolation[];
+  evaluatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Infracost Types
+// ---------------------------------------------------------------------------
+
+/** Cost breakdown for a single resource. */
+export interface ResourceCostEstimate {
+  name: string;
+  resourceType: string;
+  monthlyCost: number;
+  hourlyCost: number;
+  costComponents: { name: string; monthlyCost: number; unit: string; quantity: number }[];
+}
+
+/** Full cost estimate result. */
+export interface CostEstimateResult {
+  totalMonthlyCost: number;
+  totalHourlyCost: number;
+  resources: ResourceCostEstimate[];
+  currency: string;
+  estimatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-File Module Support Types
+// ---------------------------------------------------------------------------
+
+/** Map of relative file path → Bicep content for multi-file input. */
+export type BicepFiles = Record<string, string>;
+
+/** Metadata about a Bicep module reference found during parsing. */
+export interface BicepModuleRef {
+  /** Symbolic name of the module declaration */
+  name: string;
+  /** Relative path from the declaring file, e.g. './modules/storage.bicep' */
+  source: string;
+  /** The file that contains this module declaration */
+  declaredIn: string;
+  /** Resolved path key into BicepFiles, e.g. 'modules/storage.bicep' */
+  resolvedPath: string | null;
+}
+
+/** Dependency graph for multi-file Bicep projects. */
+export interface BicepDependencyGraph {
+  /** All files in the project, keyed by relative path */
+  files: string[];
+  /** Module references between files */
+  modules: BicepModuleRef[];
+  /** Topological order for processing (leaves first) */
+  processingOrder: string[];
+  /** Files that could not be resolved */
+  unresolvedModules: BicepModuleRef[];
+}
+
+/** Summary of input context for the agent, used for large-codebase strategies. */
+export interface InputContextSummary {
+  totalFiles: number;
+  totalLines: number;
+  totalBytes: number;
+  entryPoint: string;
+  /** Whether the combined content exceeds the token budget */
+  exceedsTokenBudget: boolean;
 }

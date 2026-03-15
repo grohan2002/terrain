@@ -91,7 +91,7 @@ export default function DashboardPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             {[
               "AI-powered conversion using Claude",
-              "59+ resource type mappings",
+              "110+ resource type mappings",
               "Property name & SKU decomposition",
               "OpenTofu/Terraform validation",
               "Side-by-side diff viewer",

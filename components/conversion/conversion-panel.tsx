@@ -6,12 +6,17 @@ import {
   Play,
   Square,
   Download,
+  Archive,
   FileCode,
+  FolderOpen,
   ChevronDown,
   Key,
   Rocket,
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { useConversionStore } from "@/lib/store";
+import { formatCost } from "@/lib/cost";
+import { hasPermission } from "@/lib/rbac";
 import { useConversion } from "@/hooks/use-conversion";
 import { useDeployment } from "@/hooks/use-deployment";
 import { Button } from "@/components/ui/button";
@@ -39,7 +44,9 @@ import {
 } from "@/components/ui/tooltip";
 import { Kbd } from "@/components/ui/kbd";
 import { toast } from "@/components/ui/sonner";
+import { downloadTerraformZip, downloadTerraformFiles } from "@/lib/zip-export";
 import { FileUpload } from "./file-upload";
+import { FileTree } from "./file-tree";
 import { ProgressTracker } from "./progress-tracker";
 import { ValidationPanel } from "./validation-panel";
 import { ChatPanel } from "@/components/chat/chat-panel";
@@ -47,6 +54,9 @@ import { DeployChatPanel } from "@/components/deployment/deploy-chat-panel";
 import { TestResultsPanel } from "@/components/deployment/test-results-panel";
 import { DeployProgressTracker } from "@/components/deployment/deploy-progress-tracker";
 import { DestroyDialog } from "@/components/deployment/destroy-dialog";
+import { SecurityPanel } from "./security-panel";
+import { PolicyPanel } from "./policy-panel";
+import { CostEstimatePanel } from "./cost-estimate-panel";
 
 function EditorSkeleton() {
   return (
@@ -75,7 +85,7 @@ const ResourceGraph = dynamic(
   { ssr: false, loading: () => <EditorSkeleton /> }
 );
 
-type BottomTab = "chat" | "validation" | "diff" | "graph" | "deploy-chat" | "tests";
+type BottomTab = "chat" | "validation" | "diff" | "graph" | "security" | "policies" | "cost" | "deploy-chat" | "tests";
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   converting: { label: "Converting...", className: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
@@ -99,12 +109,21 @@ export function ConversionPanel() {
   const terraformFiles = useConversionStore((s) => s.terraformFiles);
   const status = useConversionStore((s) => s.status);
   const deploymentStatus = useConversionStore((s) => s.deploymentStatus);
+  const costInfo = useConversionStore((s) => s.costInfo);
   const setBicepContent = useConversionStore((s) => s.setBicepContent);
+  const isMultiFile = useConversionStore((s) => s.isMultiFile);
+  const bicepFiles = useConversionStore((s) => s.bicepFiles);
+  const entryPoint = useConversionStore((s) => s.entryPoint);
   const { startConversion, cancelConversion } = useConversion();
   const { startDeployment, destroyResources, keepResources, cancelDeployment } = useDeployment();
+  const { data: session } = useSession();
+  const userRole = session?.user?.role ?? "CONVERTER";
+
+  const bicepFileCount = useMemo(() => Object.keys(bicepFiles).length, [bicepFiles]);
 
   const [bottomTab, setBottomTab] = useState<BottomTab>("chat");
   const [selectedFile, setSelectedFile] = useState<string>("all");
+  const [selectedBicepFile, setSelectedBicepFile] = useState<string>("");
   const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   // API key dialog state
@@ -213,20 +232,27 @@ export function ConversionPanel() {
     return terraformFiles[selectedFile];
   }, [terraformFiles, selectedFile]);
 
-  const handleDownload = useCallback(() => {
-    Object.entries(terraformFiles).forEach(([name, content]) => {
-      const blob = new Blob([content], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
-    toast.success("Files downloaded", {
-      description: `${Object.keys(terraformFiles).length} file(s) saved`,
-    });
-  }, [terraformFiles]);
+  const handleDownload = useCallback(async () => {
+    const fileCount = Object.keys(terraformFiles).length;
+    const hasNestedPaths = Object.keys(terraformFiles).some((f) => f.includes("/"));
+
+    if (hasNestedPaths || isMultiFile) {
+      // Multi-file / nested paths → zip download preserving directory structure
+      const zipName = bicepFilename
+        ? `${bicepFilename.replace(/\.bicep$/, "")}-terraform.zip`
+        : "terraform-output.zip";
+      await downloadTerraformZip(terraformFiles, zipName);
+      toast.success("Zip downloaded", {
+        description: `${fileCount} file(s) archived in ${zipName}`,
+      });
+    } else {
+      // Simple flat files → individual downloads
+      downloadTerraformFiles(terraformFiles);
+      toast.success("Files downloaded", {
+        description: `${fileCount} file(s) saved`,
+      });
+    }
+  }, [terraformFiles, isMultiFile, bicepFilename]);
 
   const isConverting = status === "converting" || status === "validating";
   const hasOutput = Object.keys(terraformFiles).length > 0;
@@ -238,7 +264,8 @@ export function ConversionPanel() {
     status === "done" &&
     hasOutput &&
     !isDeploying &&
-    deploymentStatus !== "awaiting_destroy";
+    deploymentStatus !== "awaiting_destroy" &&
+    hasPermission(userRole, "DEPLOYER");
 
   // Keyboard shortcuts: Cmd/Ctrl+Enter to convert, Escape to cancel
   useEffect(() => {
@@ -266,7 +293,9 @@ export function ConversionPanel() {
         <div className="flex items-center gap-3">
           <FileCode className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">
-            {bicepFilename || "Untitled.bicep"}
+            {isMultiFile
+              ? `Project (${bicepFileCount} files)`
+              : bicepFilename || "Untitled.bicep"}
           </span>
           {status !== "idle" && statusBadge && (
             <Badge
@@ -282,6 +311,11 @@ export function ConversionPanel() {
               className={deployBadge.className}
             >
               {deployBadge.label}
+            </Badge>
+          )}
+          {costInfo && (
+            <Badge variant="outline" className="text-muted-foreground font-mono text-[10px]">
+              {formatCost(costInfo.totalCostUsd)}
             </Badge>
           )}
         </div>
@@ -309,8 +343,12 @@ export function ConversionPanel() {
           )}
           {hasOutput && (
             <Button variant="outline" size="sm" onClick={handleDownload}>
-              <Download className="h-3.5 w-3.5" />
-              Download
+              {isMultiFile || Object.keys(terraformFiles).some((f) => f.includes("/")) ? (
+                <Archive className="h-3.5 w-3.5" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              {isMultiFile ? "Download Zip" : "Download"}
             </Button>
           )}
           {isConverting ? (
@@ -358,24 +396,52 @@ export function ConversionPanel() {
       <div className="flex flex-1 min-h-0">
         <div className="flex flex-1 flex-col min-h-0">
           <div className="flex flex-1 min-h-0">
-            {/* Bicep editor */}
-            <div className="flex flex-1 flex-col min-w-0 border-r border-border">
-              <div className="flex h-8 items-center border-b border-border bg-muted/30 px-3">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Bicep (Input)
-                </span>
-              </div>
-              <div className="flex-1 min-h-0">
-                {bicepContent ? (
-                  <CodeEditor
-                    value={bicepContent}
-                    onChange={setBicepContent}
-                    language="bicep"
-                    readOnly={isConverting}
-                  />
-                ) : (
-                  <FileUpload />
-                )}
+            {/* Bicep editor (with optional file tree sidebar) */}
+            <div className="flex flex-1 min-w-0 border-r border-border">
+              {/* File tree sidebar for multi-file mode */}
+              {isMultiFile && bicepFileCount > 0 && (
+                <div className="flex w-[200px] shrink-0 flex-col border-r border-border">
+                  <div className="flex h-8 items-center gap-1.5 border-b border-border bg-muted/30 px-3">
+                    <FolderOpen className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-xs font-medium text-muted-foreground">Files</span>
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <FileTree
+                      files={bicepFiles}
+                      entryPoint={entryPoint}
+                      selectedFile={selectedBicepFile || entryPoint}
+                      onSelectFile={(path) => {
+                        setSelectedBicepFile(path);
+                        // Update editor content to show selected file (read-only in multi-file)
+                        const content = bicepFiles[path];
+                        if (content !== undefined) {
+                          setBicepContent(content, path);
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Editor area */}
+              <div className="flex flex-1 flex-col min-w-0">
+                <div className="flex h-8 items-center border-b border-border bg-muted/30 px-3">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {isMultiFile ? `Bicep — ${bicepFilename || entryPoint}` : "Bicep (Input)"}
+                  </span>
+                </div>
+                <div className="flex-1 min-h-0">
+                  {bicepContent ? (
+                    <CodeEditor
+                      value={bicepContent}
+                      onChange={isMultiFile ? undefined : setBicepContent}
+                      language="bicep"
+                      readOnly={isConverting || isMultiFile}
+                    />
+                  ) : (
+                    <FileUpload />
+                  )}
+                </div>
               </div>
             </div>
 
@@ -409,6 +475,9 @@ export function ConversionPanel() {
                   { value: "validation", label: "Validation" },
                   { value: "diff", label: "Diff" },
                   { value: "graph", label: "Graph" },
+                  { value: "security", label: "Security" },
+                  { value: "policies", label: "Policies" },
+                  { value: "cost", label: "Cost" },
                   { value: "deploy-chat", label: "Deployment" },
                   { value: "tests", label: "Tests" },
                 ] as const
@@ -434,6 +503,15 @@ export function ConversionPanel() {
             </TabsContent>
             <TabsContent value="graph" className="flex-1 min-h-0 mt-0 overflow-hidden">
               <ResourceGraph />
+            </TabsContent>
+            <TabsContent value="security" className="flex-1 min-h-0 mt-0 overflow-hidden">
+              <SecurityPanel />
+            </TabsContent>
+            <TabsContent value="policies" className="flex-1 min-h-0 mt-0 overflow-hidden">
+              <PolicyPanel />
+            </TabsContent>
+            <TabsContent value="cost" className="flex-1 min-h-0 mt-0 overflow-hidden">
+              <CostEstimatePanel />
             </TabsContent>
             <TabsContent value="deploy-chat" className="flex-1 min-h-0 mt-0 overflow-hidden">
               <DeployChatPanel />

@@ -1,16 +1,20 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Upload, FileCode } from "lucide-react";
+import { Upload, FileCode, FolderUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConversionStore } from "@/lib/store";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
+import { MultiFileUpload } from "./multi-file-upload";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
+type UploadMode = "single" | "project";
+
 export function FileUpload() {
   const [dragOver, setDragOver] = useState(false);
+  const [mode, setMode] = useState<UploadMode>("single");
   const setBicepContent = useConversionStore((s) => s.setBicepContent);
 
   const handleFile = useCallback(
@@ -63,47 +67,78 @@ export function FileUpload() {
   );
 
   return (
-    <div
-      role="region"
-      aria-label="File upload"
-      className={cn(
-        "flex h-full flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed p-8 transition-colors",
-        dragOver
-          ? "border-primary bg-primary/5"
-          : "border-border hover:border-muted-foreground/50"
-      )}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragOver(true);
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={handleDrop}
-    >
-      <div className="rounded-full bg-muted p-4">
-        {dragOver ? (
-          <FileCode className="h-8 w-8 text-primary" />
+    <div className="flex h-full flex-col">
+      {/* Mode toggle */}
+      <div className="flex items-center justify-center gap-1 border-b border-border bg-muted/30 px-3 py-1.5">
+        <Button
+          variant={mode === "single" ? "secondary" : "ghost"}
+          size="sm"
+          className="h-7 text-xs gap-1.5"
+          onClick={() => setMode("single")}
+        >
+          <FileCode className="h-3 w-3" />
+          Single File
+        </Button>
+        <Button
+          variant={mode === "project" ? "secondary" : "ghost"}
+          size="sm"
+          className="h-7 text-xs gap-1.5"
+          onClick={() => setMode("project")}
+        >
+          <FolderUp className="h-3 w-3" />
+          Project
+        </Button>
+      </div>
+
+      {/* Upload area */}
+      <div className="flex-1 min-h-0">
+        {mode === "project" ? (
+          <MultiFileUpload />
         ) : (
-          <Upload className="h-8 w-8 text-muted-foreground" />
+          <div
+            role="region"
+            aria-label="File upload"
+            className={cn(
+              "flex h-full flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed p-8 transition-colors",
+              dragOver
+                ? "border-primary bg-primary/5"
+                : "border-border hover:border-muted-foreground/50"
+            )}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+          >
+            <div className="rounded-full bg-muted p-4">
+              {dragOver ? (
+                <FileCode className="h-8 w-8 text-primary" />
+              ) : (
+                <Upload className="h-8 w-8 text-muted-foreground" />
+              )}
+            </div>
+            <div className="text-center">
+              <p className="font-medium">Drop a .bicep file here</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                or click to browse
+              </p>
+            </div>
+            <label className={cn(buttonVariants(), "cursor-pointer")}>
+              Browse Files
+              <input
+                type="file"
+                accept=".bicep"
+                className="hidden"
+                onChange={handleChange}
+              />
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Or paste Bicep code directly in the editor
+            </p>
+          </div>
         )}
       </div>
-      <div className="text-center">
-        <p className="font-medium">Drop a .bicep file here</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          or click to browse
-        </p>
-      </div>
-      <label className={cn(buttonVariants(), "cursor-pointer")}>
-        Browse Files
-        <input
-          type="file"
-          accept=".bicep"
-          className="hidden"
-          onChange={handleChange}
-        />
-      </label>
-      <p className="text-xs text-muted-foreground">
-        Or paste Bicep code directly in the editor
-      </p>
     </div>
   );
 }

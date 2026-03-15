@@ -12,6 +12,7 @@
 
 import { create } from "zustand";
 import type {
+  BicepFiles,
   ConversionStatus,
   TerraformFiles,
   ValidationResult,
@@ -24,6 +25,7 @@ import type {
   DeployPhase,
   TestResult,
   DeploySummary,
+  CostInfo,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -34,6 +36,11 @@ export interface ConversionState {
   // Bicep input
   bicepContent: string;
   bicepFilename: string;
+
+  // Multi-file input
+  bicepFiles: BicepFiles;
+  isMultiFile: boolean;
+  entryPoint: string;
 
   // Terraform output
   terraformFiles: TerraformFiles;
@@ -56,6 +63,10 @@ export interface ConversionState {
   // History
   history: ConversionHistoryEntry[];
 
+  // Cost tracking
+  costInfo: CostInfo | null;
+  deployCostInfo: CostInfo | null;
+
   // ---- Deployment state ----
   deploymentStatus: DeploymentStatus;
   deploymentProgress: DeploymentProgress | null;
@@ -72,6 +83,8 @@ export interface ConversionState {
 
   // Actions — conversion
   setBicepContent: (content: string, filename?: string) => void;
+  setBicepFiles: (files: BicepFiles, entryPoint?: string) => void;
+  clearBicepFiles: () => void;
   setTerraformFiles: (files: TerraformFiles) => void;
   setStatus: (status: ConversionStatus) => void;
   setProgress: (progress: ConversionProgress | null) => void;
@@ -83,6 +96,8 @@ export interface ConversionState {
   addToolCall: (toolCall: ToolCallInfo) => void;
   addHistoryEntry: (entry: ConversionHistoryEntry) => void;
   setHistory: (history: ConversionHistoryEntry[]) => void;
+  setCostInfo: (info: CostInfo | null) => void;
+  setDeployCostInfo: (info: CostInfo | null) => void;
   reset: () => void;
   resetConversion: () => void;
 
@@ -115,6 +130,7 @@ const initialConversionState = {
   validationResult: null as ValidationResult | null,
   messages: [] as ConversationMessage[],
   toolCalls: [] as ToolCallInfo[],
+  costInfo: null as CostInfo | null,
 };
 
 const initialDeploymentState = {
@@ -130,6 +146,7 @@ const initialDeploymentState = {
   deploySummary: null as DeploySummary | null,
   deployWorkingDir: null as string | null,
   deployResourceGroup: null as string | null,
+  deployCostInfo: null as CostInfo | null,
 };
 
 // ---------------------------------------------------------------------------
@@ -164,6 +181,9 @@ function saveHistory(history: ConversionHistoryEntry[]) {
 export const useConversionStore = create<ConversionState>()((set) => ({
   bicepContent: "",
   bicepFilename: "",
+  bicepFiles: {} as BicepFiles,
+  isMultiFile: false,
+  entryPoint: "",
   ...initialConversionState,
   ...initialDeploymentState,
   history: [],
@@ -172,6 +192,25 @@ export const useConversionStore = create<ConversionState>()((set) => ({
     set({
       bicepContent: content,
       ...(filename !== undefined ? { bicepFilename: filename } : {}),
+      isMultiFile: false,
+    }),
+
+  setBicepFiles: (files, ep) => {
+    const entryPoint = ep ?? Object.keys(files)[0] ?? "";
+    set({
+      bicepFiles: files,
+      isMultiFile: true,
+      entryPoint,
+      bicepContent: files[entryPoint] ?? "",
+      bicepFilename: entryPoint,
+    });
+  },
+
+  clearBicepFiles: () =>
+    set({
+      bicepFiles: {} as BicepFiles,
+      isMultiFile: false,
+      entryPoint: "",
     }),
 
   setTerraformFiles: (files) => set({ terraformFiles: files }),
@@ -207,10 +246,16 @@ export const useConversionStore = create<ConversionState>()((set) => ({
     set({ history });
   },
 
+  setCostInfo: (info) => set({ costInfo: info }),
+  setDeployCostInfo: (info) => set({ deployCostInfo: info }),
+
   reset: () =>
     set({
       bicepContent: "",
       bicepFilename: "",
+      bicepFiles: {} as BicepFiles,
+      isMultiFile: false,
+      entryPoint: "",
       ...initialConversionState,
       ...initialDeploymentState,
     }),

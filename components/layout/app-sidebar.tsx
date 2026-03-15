@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession, signOut } from "next-auth/react";
 import {
   ArrowLeftRight,
   FolderSync,
   History,
+  LogOut,
   Map,
   Menu,
   X,
@@ -25,6 +27,7 @@ const navItems = [
 export function AppSidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { data: session } = useSession();
 
   return (
     <>
@@ -91,7 +94,35 @@ export function AppSidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-sidebar-border p-3">
+        <div className="border-t border-sidebar-border p-3 space-y-2">
+          {session?.user && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-medium">
+                  {(session.user.name ?? session.user.email ?? "U")[0].toUpperCase()}
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs text-muted-foreground truncate">
+                    {session.user.email ?? session.user.name}
+                  </span>
+                  {"role" in session.user && (
+                    <span className="text-[10px] text-muted-foreground/60 capitalize">
+                      {(session.user.role as string)?.toLowerCase()}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 shrink-0"
+                onClick={() => signOut({ callbackUrl: "/login" })}
+                aria-label="Sign out"
+              >
+                <LogOut className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">Theme</span>
             <ThemeToggle />

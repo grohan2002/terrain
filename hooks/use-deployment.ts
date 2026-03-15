@@ -130,12 +130,13 @@ export function useDeployment() {
         useConversionStore.getState().setDeploymentProgress({ step, total, label });
       },
 
-      onDone: (fullReply, toolCalls, summary) => {
+      onDone: (fullReply, toolCalls, summary, costInfo) => {
         const s = useConversionStore.getState();
         s.setDeploymentStatus("awaiting_destroy");
         s.setDeployActiveToolName(null);
         s.setDeploymentProgress(null);
         s.setDeploySummary(summary);
+        if (costInfo) s.setDeployCostInfo(costInfo);
 
         s.addDeployMessage({
           role: "assistant",

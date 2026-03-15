@@ -1,9 +1,5 @@
 // ---------------------------------------------------------------------------
 // POST /api/deploy/setup — Pre-flight for deployment testing.
-//
-// Creates a temporary working directory, writes Terraform files,
-// creates an Azure resource group, and runs `tofu init`.
-// Returns { workingDir, resourceGroupName } on success.
 // ---------------------------------------------------------------------------
 
 import { NextRequest } from "next/server";
@@ -12,31 +8,33 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execSync } from "node:child_process";
+import { DeploySetupSchema } from "@/lib/schemas";
+import { createRequestLogger } from "@/lib/logger";
+import { v4 as uuid } from "uuid";
 
 export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
-  let terraformFiles: Record<string, string>;
-  let location: string;
+  const requestId = uuid();
+  const log = createRequestLogger(requestId);
 
+  // Parse & validate
+  let body: unknown;
   try {
-    const body = await request.json();
-    terraformFiles = body.terraformFiles;
-    location = typeof body.location === "string" ? body.location : "eastus";
-
-    if (
-      !terraformFiles ||
-      typeof terraformFiles !== "object" ||
-      Object.keys(terraformFiles).length === 0
-    ) {
-      return Response.json(
-        { error: "Missing or invalid 'terraformFiles' in request body" },
-        { status: 400 },
-      );
-    }
+    body = await request.json();
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+
+  const parsed = DeploySetupSchema.safeParse(body);
+  if (!parsed.success) {
+    return Response.json(
+      { error: "Validation failed", issues: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+
+  const { terraformFiles, location } = parsed.data;
 
   // Generate unique resource group name
   const suffix = crypto.randomBytes(4).toString("hex");
@@ -45,13 +43,26 @@ export async function POST(request: NextRequest) {
   // Create temp working directory
   const workingDir = path.join(os.tmpdir(), `bicep-deploy-${suffix}`);
 
+  log.info({ resourceGroupName, workingDir, location }, "Setup started");
+
   try {
     fs.mkdirSync(workingDir, { recursive: true });
 
-    // Write all .tf files
+    // Write all .tf files (preserving nested module paths like modules/storage/main.tf)
     for (const [filename, content] of Object.entries(terraformFiles)) {
-      const safeFilename = path.basename(filename); // prevent path traversal
-      fs.writeFileSync(path.join(workingDir, safeFilename), content, "utf-8");
+      const filePath = path.join(workingDir, filename);
+      // Prevent path traversal: ensure resolved path stays within workingDir
+      const resolvedBase = path.resolve(workingDir) + path.sep;
+      const resolvedFile = path.resolve(filePath);
+      if (!resolvedFile.startsWith(resolvedBase) && resolvedFile !== path.resolve(workingDir)) {
+        continue; // skip files with path traversal attempts
+      }
+      // Create parent directories for nested paths
+      const parentDir = path.dirname(filePath);
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
+      fs.writeFileSync(filePath, content, "utf-8");
     }
 
     // Write terraform.tfvars with resource group and location
@@ -86,10 +97,9 @@ export async function POST(request: NextRequest) {
       );
     } catch (err: unknown) {
       const execErr = err as { stderr?: string };
+      log.error({ error: execErr.stderr }, "Failed to create resource group");
       return Response.json(
-        {
-          error: `Failed to create resource group: ${execErr.stderr ?? "unknown error"}`,
-        },
+        { error: `Failed to create resource group: ${execErr.stderr ?? "unknown error"}` },
         { status: 500 },
       );
     }
@@ -104,20 +114,19 @@ export async function POST(request: NextRequest) {
       });
     } catch (err: unknown) {
       const execErr = err as { stdout?: string; stderr?: string; status?: number };
-      const combined = [execErr.stdout, execErr.stderr]
-        .filter(Boolean)
-        .join("\n");
+      const combined = [execErr.stdout, execErr.stderr].filter(Boolean).join("\n");
+      log.error({ error: combined }, `${cli} init failed`);
       return Response.json(
-        {
-          error: `${cli} init failed (exit ${execErr.status ?? "unknown"}):\n${combined}`,
-        },
+        { error: `${cli} init failed (exit ${execErr.status ?? "unknown"}):\n${combined}` },
         { status: 500 },
       );
     }
 
+    log.info({ cli, resourceGroupName }, "Setup completed");
     return Response.json({ workingDir, resourceGroupName, cli });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    log.error({ error: msg }, "Setup failed");
     return Response.json({ error: `Setup failed: ${msg}` }, { status: 500 });
   }
 }

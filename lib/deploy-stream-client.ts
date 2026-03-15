@@ -9,6 +9,7 @@ import type {
   DeployStreamEvent,
   DeploySummary,
   ToolCallInfo,
+  CostInfo,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -23,7 +24,7 @@ export interface DeployCallbacks {
   onTestResult: (testName: string, passed: boolean, detail: string) => void;
   onOutputs: (outputs: Record<string, string>) => void;
   onProgress: (step: number, total: number, label: string) => void;
-  onDone: (fullReply: string, toolCalls: ToolCallInfo[], summary: DeploySummary) => void;
+  onDone: (fullReply: string, toolCalls: ToolCallInfo[], summary: DeploySummary, costInfo?: CostInfo) => void;
   onError: (message: string) => void;
 }
 
@@ -172,7 +173,7 @@ function dispatchEvent(
       callbacks.onProgress(event.step, event.total, event.label);
       break;
     case "done":
-      callbacks.onDone(event.fullReply, event.toolCalls, event.summary);
+      callbacks.onDone(event.fullReply, event.toolCalls, event.summary, event.costInfo);
       break;
     case "error":
       callbacks.onError(event.message);

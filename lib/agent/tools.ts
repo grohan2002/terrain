@@ -113,7 +113,9 @@ export const bicepTools: Tool[] = [
     description:
       "Write generated Terraform/OpenTofu HCL content to files in the output directory. " +
       "Pass output_dir (the directory path) and files (a JSON string mapping filenames " +
-      "like 'main.tf', 'variables.tf' to their HCL content). " +
+      "like 'main.tf', 'variables.tf', 'terraform.tfvars' to their HCL content). " +
+      "Supports .tf, .tfvars, .tfvars.json, and .hcl extensions. " +
+      "Nested paths (e.g. 'modules/storage/main.tf') are supported. " +
       "The output_dir will be created if it does not exist.",
     input_schema: {
       type: "object" as const,
@@ -173,6 +175,47 @@ export const bicepTools: Tool[] = [
         },
       },
       required: ["directory"],
+    },
+  },
+
+  // Tool 8: Format Terraform files
+  {
+    name: "format_terraform",
+    description:
+      "Format Terraform/OpenTofu HCL files using 'tofu fmt' or 'terraform fmt'. " +
+      "Runs the formatter on the specified directory to ensure consistent code style. " +
+      "Returns the list of files that were modified.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        working_dir: {
+          type: "string",
+          description:
+            "Directory containing the .tf files to format.",
+        },
+      },
+      required: ["working_dir"],
+    },
+  },
+
+  // Tool 9: Read Bicep file content from in-memory project (multi-file mode)
+  {
+    name: "read_bicep_file_content",
+    description:
+      "Read the full content of a Bicep file from the in-memory project context. " +
+      "Use this when a file was summarized in the user message and you need its full content. " +
+      "Only available in multi-file conversion mode. " +
+      "Pass the relative file path as it appears in the project file listing.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        file_path: {
+          type: "string",
+          description:
+            "Relative file path within the project (e.g., 'modules/storage.bicep').",
+        },
+      },
+      required: ["file_path"],
     },
   },
 ];

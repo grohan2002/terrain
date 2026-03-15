@@ -15,6 +15,8 @@ import type {
 import { deployTools } from "./tools";
 import { createDeployToolHandlers, type DeployToolCallbacks } from "./tool-handlers";
 import { DEPLOY_SYSTEM_PROMPT } from "./system-prompt";
+import { withRetry } from "../retry";
+import { calculateCost, addCosts, type CostInfo } from "../cost";
 import type { DeployStreamEvent, ToolCallInfo, DeploySummary } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -59,6 +61,11 @@ export async function deployStream(
 
   let fullReply = "";
   const allToolCalls: ToolCallInfo[] = [];
+  let totalCost: CostInfo = {
+    inputTokens: 0, outputTokens: 0,
+    cacheReadTokens: 0, cacheWriteTokens: 0,
+    totalCostUsd: 0, model: MODEL,
+  };
 
   // Track test results for the summary
   let testsPassed = 0;
@@ -121,13 +128,17 @@ export async function deployStream(
       label: round === 1 ? "Starting deployment" : `Tool round ${round}`,
     });
 
-    const stream = client.messages.stream({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: DEPLOY_SYSTEM_PROMPT,
-      tools: deployTools,
-      messages,
-    });
+    const stream = await withRetry(() =>
+      Promise.resolve(
+        client.messages.stream({
+          model: MODEL,
+          max_tokens: MAX_TOKENS,
+          system: [{ type: "text", text: DEPLOY_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+          tools: deployTools,
+          messages,
+        }),
+      ),
+    );
 
     stream.on("text", (textDelta) => {
       fullReply += textDelta;
@@ -147,6 +158,17 @@ export async function deployStream(
       return;
     }
 
+    // Track cost
+    const usage = finalMessage.usage;
+    const roundCost = calculateCost(
+      MODEL,
+      usage.input_tokens,
+      usage.output_tokens,
+      (usage as unknown as Record<string, number>).cache_read_input_tokens ?? 0,
+      (usage as unknown as Record<string, number>).cache_creation_input_tokens ?? 0,
+    );
+    totalCost = addCosts(totalCost, roundCost);
+
     // Model is done (no more tool calls)
     if (finalMessage.stop_reason !== "tool_use") {
       const summary: DeploySummary = {
@@ -162,6 +184,7 @@ export async function deployStream(
         fullReply,
         toolCalls: allToolCalls,
         summary,
+        costInfo: totalCost,
       });
       return;
     }
@@ -203,10 +226,11 @@ export async function deployStream(
         isError = true;
       } else {
         try {
-          resultText = await handler(toolInput);
-          isError = resultText.startsWith("Error:");
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const result = await handler(toolInput);
+          isError = !result.ok;
+          resultText = result.ok ? result.data : result.error;
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
           resultText = `Error: Tool execution failed: ${msg}`;
           isError = true;
         }
@@ -252,5 +276,6 @@ export async function deployStream(
       "\n\n[Reached maximum tool rounds. Some tests may not have completed.]",
     toolCalls: allToolCalls,
     summary,
+    costInfo: totalCost,
   });
 }

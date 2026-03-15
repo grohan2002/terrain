@@ -1,0 +1,96 @@
+// ---------------------------------------------------------------------------
+// Prisma schema for the Bicep-to-Terraform converter.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+model User {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  name        String?
+  role        Role         @default(CONVERTER)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  conversions Conversion[]
+  deployments Deployment[]
+  auditLogs   AuditLog[]
+
+  @@map("users")
+}
+
+model Conversion {
+  id               String   @id @default(cuid())
+  userId           String?  @map("user_id")
+  bicepFilename    String   @default("untitled.bicep") @map("bicep_filename")
+  bicepContent     String   @map("bicep_content")
+  terraformFiles   Json     @map("terraform_files")
+  validationPassed Boolean  @default(false) @map("validation_passed")
+  model            String?
+  inputTokens      Int      @default(0) @map("input_tokens")
+  outputTokens     Int      @default(0) @map("output_tokens")
+  totalCostUsd     Float    @default(0) @map("total_cost_usd")
+  status           String   @default("completed")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("conversions")
+}
+
+model Deployment {
+  id                String   @id @default(cuid())
+  userId            String?  @map("user_id")
+  resourceGroupName String   @map("resource_group_name")
+  testsPassed       Int      @default(0) @map("tests_passed")
+  testsFailed       Int      @default(0) @map("tests_failed")
+  destroyed         Boolean  @default(false)
+  totalCostUsd      Float    @default(0) @map("total_cost_usd")
+  status            String   @default("completed")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("deployments")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  action    String
+  details   Json?
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([action])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  VIEWER
+  CONVERTER
+  DEPLOYER
+  ADMIN
+}

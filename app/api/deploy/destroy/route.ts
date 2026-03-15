@@ -1,39 +1,41 @@
 // ---------------------------------------------------------------------------
 // POST /api/deploy/destroy — Deterministic teardown (no LLM).
-//
-// Runs `tofu destroy` in the working directory, then deletes the
-// Azure resource group. Returns { success, output }.
 // ---------------------------------------------------------------------------
 
 import { NextRequest } from "next/server";
 import { execSync } from "node:child_process";
+import { DeployDestroySchema } from "@/lib/schemas";
+import { createRequestLogger } from "@/lib/logger";
+import { auditLog } from "@/lib/audit";
+import { v4 as uuid } from "uuid";
 
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
-  let workingDir: string;
-  let resourceGroupName: string;
+  const requestId = uuid();
+  const log = createRequestLogger(requestId);
 
+  // Parse & validate
+  let body: unknown;
   try {
-    const body = await request.json();
-    workingDir = body.workingDir;
-    resourceGroupName = body.resourceGroupName;
-
-    if (!workingDir || typeof workingDir !== "string") {
-      return Response.json(
-        { error: "Missing or invalid 'workingDir'" },
-        { status: 400 },
-      );
-    }
-    if (!resourceGroupName || typeof resourceGroupName !== "string") {
-      return Response.json(
-        { error: "Missing or invalid 'resourceGroupName'" },
-        { status: 400 },
-      );
-    }
+    body = await request.json();
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+
+  const parsed = DeployDestroySchema.safeParse(body);
+  if (!parsed.success) {
+    return Response.json(
+      { error: "Validation failed", issues: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+
+  const { workingDir, resourceGroupName } = parsed.data;
+
+  log.info({ workingDir, resourceGroupName }, "Destroy started");
+  const ip = request.headers.get("x-forwarded-for") ?? "127.0.0.1";
+  auditLog("destroy.started", { resourceGroupName }, undefined, ip);
 
   // Detect CLI
   let cli: string;
@@ -68,13 +70,11 @@ export async function POST(request: NextRequest) {
     outputs.push(`${cli} destroy:\n${destroyOutput}`);
   } catch (err: unknown) {
     const execErr = err as { stdout?: string; stderr?: string; status?: number };
-    const combined = [execErr.stdout, execErr.stderr]
-      .filter(Boolean)
-      .join("\n");
+    const combined = [execErr.stdout, execErr.stderr].filter(Boolean).join("\n");
     outputs.push(
       `${cli} destroy failed (exit ${execErr.status ?? "unknown"}):\n${combined}`,
     );
-    // Continue to delete the resource group even if destroy fails
+    log.warn({ error: combined }, "Terraform destroy failed, continuing to delete RG");
   }
 
   // 2. Delete the Azure resource group (async, non-blocking)
@@ -94,6 +94,9 @@ export async function POST(request: NextRequest) {
       `Warning: Failed to delete resource group: ${execErr.stderr ?? "unknown error"}`,
     );
   }
+
+  log.info({ resourceGroupName }, "Destroy completed");
+  auditLog("destroy.completed", { resourceGroupName }, undefined, ip);
 
   return Response.json({
     success: true,

@@ -1,71 +1,73 @@
 // ---------------------------------------------------------------------------
 // POST /api/deploy — SSE endpoint for deployment testing.
-//
-// Accepts { terraformFiles, workingDir, resourceGroupName, bicepContent, apiKey? }.
-// Streams back server-sent events with DeployStreamEvent payloads.
 // ---------------------------------------------------------------------------
 
 import { NextRequest } from "next/server";
 import { deployStream } from "@/lib/deploy-agent/stream";
+import { DeployRequestSchema } from "@/lib/schemas";
+import { createRequestLogger } from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { auditLog } from "@/lib/audit";
 import type { DeployStreamEvent } from "@/lib/types";
+import { v4 as uuid } from "uuid";
 
 /** Allow up to 10 minutes for deployment + testing. */
 export const maxDuration = 600;
 
 export async function POST(request: NextRequest) {
-  let terraformFiles: Record<string, string>;
-  let workingDir: string;
-  let resourceGroupName: string;
-  let bicepContent: string;
-  let apiKey: string | undefined;
+  const requestId = uuid();
+  const log = createRequestLogger(requestId);
+  const ip = request.headers.get("x-forwarded-for") ?? "127.0.0.1";
 
+  // Rate limit
+  const rl = checkRateLimit("deploy", ip);
+  if (!rl.allowed) {
+    log.warn({ ip }, "Rate limited");
+    return Response.json(
+      { error: "Too many requests" },
+      {
+        status: 429,
+        headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) },
+      },
+    );
+  }
+
+  // Parse & validate
+  let body: unknown;
   try {
-    const body = await request.json();
-    terraformFiles = body.terraformFiles;
-    workingDir = body.workingDir;
-    resourceGroupName = body.resourceGroupName;
-    bicepContent = body.bicepContent ?? "";
-    apiKey = typeof body.apiKey === "string" ? body.apiKey : undefined;
-
-    if (!terraformFiles || typeof terraformFiles !== "object") {
-      return Response.json(
-        { error: "Missing or invalid 'terraformFiles'" },
-        { status: 400 },
-      );
-    }
-    if (!workingDir || typeof workingDir !== "string") {
-      return Response.json(
-        { error: "Missing or invalid 'workingDir'" },
-        { status: 400 },
-      );
-    }
-    if (!resourceGroupName || typeof resourceGroupName !== "string") {
-      return Response.json(
-        { error: "Missing or invalid 'resourceGroupName'" },
-        { status: 400 },
-      );
-    }
+    body = await request.json();
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // Create a TransformStream to push SSE data to the response
+  const parsed = DeployRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return Response.json(
+      { error: "Validation failed", issues: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+
+  const { terraformFiles, workingDir, resourceGroupName, bicepContent, apiKey } =
+    parsed.data;
+
+  log.info(
+    { ip, resourceGroupName, fileCount: Object.keys(terraformFiles).length },
+    "Deployment started",
+  );
+  auditLog("deployment.started", { resourceGroupName }, undefined, ip);
+
   const encoder = new TextEncoder();
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
 
-  // Helper to write a single SSE event
   function sendEvent(event: DeployStreamEvent): void {
     const data = JSON.stringify(event);
-    writer.write(encoder.encode(`data: ${data}\n\n`)).catch(() => {
-      // Client disconnected — ignore write errors
-    });
+    writer.write(encoder.encode(`data: ${data}\n\n`)).catch(() => {});
   }
 
-  // Use the request signal for cancellation
   const signal = request.signal;
 
-  // Start the deployment agent loop in the background
   deployStream(
     terraformFiles,
     workingDir,
@@ -75,14 +77,18 @@ export async function POST(request: NextRequest) {
     signal,
     apiKey,
   )
+    .then(() => {
+      log.info("Deployment completed");
+      auditLog("deployment.completed", { resourceGroupName }, undefined, ip);
+    })
     .catch((err) => {
       const message = err instanceof Error ? err.message : String(err);
+      log.error({ error: message }, "Deployment failed");
+      auditLog("deployment.failed", { resourceGroupName, error: message }, undefined, ip);
       sendEvent({ type: "error", message });
     })
     .finally(() => {
-      writer.close().catch(() => {
-        // Already closed — ignore
-      });
+      writer.close().catch(() => {});
     });
 
   return new Response(readable, {
@@ -91,6 +97,7 @@ export async function POST(request: NextRequest) {
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
+      "X-Request-Id": requestId,
     },
   });
 }

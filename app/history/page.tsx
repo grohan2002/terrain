@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { History, FileCode } from "lucide-react";
+import { History, FileCode, FolderOpen } from "lucide-react";
 import { useConversionStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,13 +18,23 @@ import { toast } from "@/components/ui/sonner";
 export default function HistoryPage() {
   const history = useConversionStore((s) => s.history);
   const setBicepContent = useConversionStore((s) => s.setBicepContent);
+  const setBicepFiles = useConversionStore((s) => s.setBicepFiles);
   const setTerraformFiles = useConversionStore((s) => s.setTerraformFiles);
   const router = useRouter();
 
   const handleLoad = (entry: (typeof history)[0]) => {
-    setBicepContent(entry.bicepContent, entry.bicepFile);
+    // Restore multi-file context if available
+    if (entry.isMultiFile && entry.bicepFiles && entry.entryPoint) {
+      setBicepFiles(entry.bicepFiles, entry.entryPoint);
+    } else {
+      setBicepContent(entry.bicepContent, entry.bicepFile);
+    }
     setTerraformFiles(entry.terraformFiles);
-    toast.success("Loaded conversion", { description: entry.bicepFile });
+    toast.success("Loaded conversion", {
+      description: entry.isMultiFile
+        ? `Project (${entry.bicepFileCount ?? Object.keys(entry.bicepFiles ?? {}).length} files)`
+        : entry.bicepFile,
+    });
     router.push("/convert");
   };
 
@@ -68,8 +78,16 @@ export default function HistoryPage() {
                 <TableRow key={entry.id}>
                   <TableCell className="px-4">
                     <div className="flex items-center gap-2">
-                      <FileCode className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium">{entry.bicepFile}</span>
+                      {entry.isMultiFile ? (
+                        <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <FileCode className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <span className="font-medium">
+                        {entry.isMultiFile
+                          ? `Project (${entry.bicepFileCount ?? "?"} files)`
+                          : entry.bicepFile}
+                      </span>
                     </div>
                   </TableCell>
                   <TableCell className="px-4 text-muted-foreground">

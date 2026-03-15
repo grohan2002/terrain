@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execSync } from "node:child_process";
 
@@ -16,6 +17,64 @@ import {
   extractStorageTier,
   extractStorageReplication,
 } from "../mappings";
+import { ok, err, type ToolResult } from "../tool-result";
+
+// ---------------------------------------------------------------------------
+// Path safety helpers
+// ---------------------------------------------------------------------------
+
+/** Verify that a resolved path stays within the expected base directory. */
+function isPathWithin(base: string, target: string): boolean {
+  const resolvedBase = path.resolve(base) + path.sep;
+  const resolvedTarget = path.resolve(target);
+  return resolvedTarget.startsWith(resolvedBase) || resolvedTarget === path.resolve(base);
+}
+
+/** Restrict file reads to .bicep files in the cwd or temp directories. */
+function isSafeReadPath(filePath: string): boolean {
+  const resolved = path.resolve(filePath);
+  const cwd = process.cwd();
+  const tmp = os.tmpdir();
+  return isPathWithin(cwd, resolved) || isPathWithin(tmp, resolved);
+}
+
+// ---------------------------------------------------------------------------
+// Terraform validate -json output parser
+// ---------------------------------------------------------------------------
+
+interface ValidateDiagnostic {
+  severity: "error" | "warning";
+  summary: string;
+  detail?: string;
+  range?: {
+    filename?: string;
+    start?: { line?: number; column?: number };
+    end?: { line?: number; column?: number };
+  };
+}
+
+interface ValidateJsonOutput {
+  valid: boolean;
+  error_count: number;
+  warning_count: number;
+  diagnostics: ValidateDiagnostic[];
+}
+
+/** Parse `terraform validate -json` output. Returns null if not valid JSON. */
+function parseValidateJson(raw: string): ValidateJsonOutput | null {
+  try {
+    const data = JSON.parse(raw.trim());
+    if (typeof data.valid !== "boolean") return null;
+    return {
+      valid: data.valid,
+      error_count: data.error_count ?? 0,
+      warning_count: data.warning_count ?? 0,
+      diagnostics: Array.isArray(data.diagnostics) ? data.diagnostics : [],
+    };
+  } catch {
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Callbacks for side-effects the stream layer cares about
@@ -26,29 +85,42 @@ export interface ToolHandlerCallbacks {
   onValidation?: (passed: boolean, output: string) => void;
 }
 
+/** Extended options that include the optional multi-file context. */
+export interface ToolHandlerOptions extends ToolHandlerCallbacks {
+  /** In-memory Bicep file map for multi-file projects (path → content). */
+  bicepFilesContext?: Record<string, string>;
+}
+
 // ---------------------------------------------------------------------------
 // Factory — returns a name -> handler map
 // ---------------------------------------------------------------------------
 
 export function createToolHandlers(
-  callbacks?: ToolHandlerCallbacks,
-): Record<string, (input: Record<string, unknown>) => Promise<string>> {
+  callbacksOrOptions?: ToolHandlerCallbacks | ToolHandlerOptions,
+): Record<string, (input: Record<string, unknown>) => Promise<ToolResult>> {
+  const callbacks = callbacksOrOptions;
+  const bicepFilesContext = (callbacksOrOptions as ToolHandlerOptions | undefined)?.bicepFilesContext;
   // ------------------------------------------------------------------
   // Tool 1: read_bicep_file
   // ------------------------------------------------------------------
   async function readBicepFile(
     input: Record<string, unknown>,
-  ): Promise<string> {
+  ): Promise<ToolResult> {
     const filePath = String(input.file_path ?? "");
     const resolved = path.resolve(filePath);
 
+    // Path traversal protection: restrict reads to cwd or temp directories
+    if (!isSafeReadPath(resolved)) {
+      return err(`Access denied: file path is outside allowed directories`);
+    }
+
     if (!fs.existsSync(resolved)) {
-      return `Error: File not found: ${resolved}`;
+      return err(`File not found: ${resolved}`);
     }
 
     const stat = fs.statSync(resolved);
     if (!stat.isFile()) {
-      return `Error: Not a file: ${resolved}`;
+      return err(`Not a file: ${resolved}`);
     }
 
     try {
@@ -61,9 +133,9 @@ export function createToolHandlers(
         header += `Warning: file extension is '${path.extname(resolved)}', not '.bicep'\n`;
       }
 
-      return `${header}\n${content}`;
-    } catch (err) {
-      return `Error: Failed to read ${resolved}: ${String(err)}`;
+      return ok(`${header}\n${content}`);
+    } catch (e) {
+      return err(`Failed to read ${resolved}: ${String(e)}`);
     }
   }
 
@@ -72,11 +144,11 @@ export function createToolHandlers(
   // ------------------------------------------------------------------
   async function parseBicep(
     input: Record<string, unknown>,
-  ): Promise<string> {
+  ): Promise<ToolResult> {
     const content = String(input.content ?? "");
 
     if (!content.trim()) {
-      return "Error: Empty content provided to parse_bicep.";
+      return err("Empty content provided to parse_bicep.");
     }
 
     // No pycep equivalent in TypeScript — return the raw content with
@@ -118,11 +190,11 @@ export function createToolHandlers(
       sections.push(line);
     }
 
-    return [
+    return ok([
       "Parsing mode: LLM-native (raw Bicep with section markers)",
       "",
       ...sections,
-    ].join("\n");
+    ].join("\n"));
   }
 
   // ------------------------------------------------------------------
@@ -130,7 +202,7 @@ export function createToolHandlers(
   // ------------------------------------------------------------------
   async function lookupResourceMapping(
     input: Record<string, unknown>,
-  ): Promise<string> {
+  ): Promise<ToolResult> {
     const rawType = String(input.bicep_resource_type ?? "").trim();
 
     // Strip API version suffix
@@ -142,7 +214,7 @@ export function createToolHandlers(
 
     // Explicit null entry — merged into parent
     if (tfType === null && bicepType in RESOURCE_TYPE_MAP) {
-      return (
+      return ok(
         `Bicep type: ${bicepType}\n` +
         `Terraform equivalent: NONE (this resource is typically merged into ` +
         `its parent resource or has no direct Terraform equivalent).`
@@ -151,7 +223,7 @@ export function createToolHandlers(
 
     // Not in the map at all
     if (tfType === undefined) {
-      return (
+      return ok(
         `Bicep type: ${bicepType}\n` +
         `No mapping found in the lookup table.\n` +
         `Use your knowledge of the AzureRM Terraform provider to determine ` +
@@ -164,6 +236,21 @@ export function createToolHandlers(
       `Bicep type: ${bicepType}`,
       `Terraform type: ${tfType}`,
     ];
+
+    // Add OS-type routing notes for compute resources
+    if (bicepType === "Microsoft.Compute/virtualMachines") {
+      lines.push("");
+      lines.push("IMPORTANT: Check the VM's osProfile to determine OS type:");
+      lines.push("  - If osProfile.linuxConfiguration exists → azurerm_linux_virtual_machine");
+      lines.push("  - If osProfile.windowsConfiguration exists → azurerm_windows_virtual_machine");
+      lines.push("  Default mapping shown above is for Linux. Adjust based on actual OS.");
+    }
+    if (bicepType === "Microsoft.Compute/virtualMachineScaleSets") {
+      lines.push("");
+      lines.push("IMPORTANT: Check the VMSS osProfile to determine OS type:");
+      lines.push("  - Linux → azurerm_linux_virtual_machine_scale_set");
+      lines.push("  - Windows → azurerm_windows_virtual_machine_scale_set");
+    }
 
     // Check for property decompositions
     const decompositionEntries = Object.entries(PROPERTY_DECOMPOSITIONS).filter(
@@ -191,7 +278,7 @@ export function createToolHandlers(
       }
     }
 
-    return lines.join("\n");
+    return ok(lines.join("\n"));
   }
 
   // ------------------------------------------------------------------
@@ -199,7 +286,7 @@ export function createToolHandlers(
   // ------------------------------------------------------------------
   async function generateTerraform(
     input: Record<string, unknown>,
-  ): Promise<string> {
+  ): Promise<ToolResult> {
     const blockType = String(input.block_type ?? "").trim().toLowerCase();
     const blockName = String(input.block_name ?? "").trim();
     const hclBody = String(input.hcl_body ?? "").trim();
@@ -213,10 +300,14 @@ export function createToolHandlers(
       "module",
       "data",
       "terraform",
+      "moved",
+      "import",
+      "check",
+      "removed",
     ]);
 
     if (!validTypes.has(blockType)) {
-      return `Error: Invalid block_type '${blockType}'. Must be one of: ${[...validTypes].sort().join(", ")}`;
+      return err(`Invalid block_type '${blockType}'. Must be one of: ${[...validTypes].sort().join(", ")}`);
     }
 
     // Indent the body
@@ -249,7 +340,7 @@ export function createToolHandlers(
       hcl = `${blockType} "${blockName}" {\n${indentedBody}\n}`;
     }
 
-    return hcl;
+    return ok(hcl);
   }
 
   // ------------------------------------------------------------------
@@ -257,50 +348,61 @@ export function createToolHandlers(
   // ------------------------------------------------------------------
   async function writeTerraformFiles(
     input: Record<string, unknown>,
-  ): Promise<string> {
+  ): Promise<ToolResult> {
     const outputDir = path.resolve(String(input.output_dir ?? ""));
 
     let files: Record<string, string>;
     try {
       files = JSON.parse(String(input.files ?? "{}"));
-    } catch (err) {
-      return `Error: Invalid JSON in 'files' parameter: ${String(err)}`;
+    } catch (e) {
+      return err(`Invalid JSON in 'files' parameter: ${String(e)}`);
     }
 
     if (typeof files !== "object" || files === null || Array.isArray(files)) {
-      return "Error: 'files' must be a JSON object mapping filename -> content";
+      return err("'files' must be a JSON object mapping filename -> content");
     }
 
     try {
       fs.mkdirSync(outputDir, { recursive: true });
-    } catch (err) {
-      return `Error: Failed to create output directory: ${String(err)}`;
+    } catch (e) {
+      return err(`Failed to create output directory: ${String(e)}`);
     }
 
     const written: string[] = [];
+    const validExtensions = [".tf", ".tfvars", ".tfvars.json", ".hcl"];
     for (const [filename, content] of Object.entries(files)) {
-      if (!filename.endsWith(".tf")) {
-        written.push(`  Warning: ${filename} does not end with .tf`);
+      if (!validExtensions.some((ext) => filename.endsWith(ext))) {
+        written.push(`  Warning: ${filename} has an unexpected extension`);
       }
 
       const filePath = path.join(outputDir, filename);
+
+      // Path traversal protection: ensure resolved path stays within outputDir
+      if (!isPathWithin(outputDir, filePath)) {
+        return err(`Path traversal detected: '${filename}' resolves outside output directory`);
+      }
       try {
+        // Ensure parent directories exist (for nested module paths like modules/storage/main.tf)
+        const parentDir = path.dirname(filePath);
+        if (!fs.existsSync(parentDir)) {
+          fs.mkdirSync(parentDir, { recursive: true });
+        }
         fs.writeFileSync(filePath, content, "utf-8");
         const size = fs.statSync(filePath).size;
         written.push(`  ${filename} (${size} bytes)`);
-      } catch (err) {
-        return `Error: Failed to write ${filename}: ${String(err)}`;
+      } catch (e) {
+        return err(`Failed to write ${filename}: ${String(e)}`);
       }
     }
 
     // Fire callback so the stream can emit terraform_output
     callbacks?.onTerraformOutput?.(files);
 
-    return [
+    return ok([
       `Output directory: ${outputDir}`,
       `Files written (${Object.keys(files).length}):`,
       ...written,
-    ].join("\n");
+    ].join("\n"));
   }
 
   // ------------------------------------------------------------------
@@ -308,11 +410,11 @@ export function createToolHandlers(
   // ------------------------------------------------------------------
   async function validateTerraform(
     input: Record<string, unknown>,
-  ): Promise<string> {
+  ): Promise<ToolResult> {
     const workingDir = path.resolve(String(input.working_dir ?? ""));
 
     if (!fs.existsSync(workingDir) || !fs.statSync(workingDir).isDirectory()) {
-      return `Error: Directory not found: ${workingDir}`;
+      return err(`Directory not found: ${workingDir}`);
     }
 
     // Find the CLI binary — prefer tofu, fall back to terraform
@@ -330,8 +432,8 @@ export function createToolHandlers(
     }
 
     if (!cli) {
-      return (
-        "Error: Neither 'tofu' nor 'terraform' found in PATH. " +
+      return err(
+        "Neither 'tofu' nor 'terraform' found in PATH. " +
         "Install OpenTofu (https://opentofu.org) or Terraform to enable validation."
       );
     }
@@ -350,21 +452,21 @@ export function createToolHandlers(
 
       results.push(`\n--- ${cli} init ---`);
       if (initOutput) results.push(initOutput);
-    } catch (err: unknown) {
+    } catch (e: unknown) {
       results.push(`\n--- ${cli} init ---`);
-      const execErr = err as { stdout?: string; stderr?: string; status?: number };
+      const execErr = e as { stdout?: string; stderr?: string; status?: number };
       if (execErr.stdout) results.push(execErr.stdout);
       if (execErr.stderr) results.push(execErr.stderr);
       results.push(`\n${cli} init failed (exit code ${execErr.status ?? "unknown"})`);
 
       const output = results.join("\n");
       callbacks?.onValidation?.(false, output);
-      return output;
+      return err(output);
     }
 
-    // Run validate
+    // Run validate with -json for structured output
     try {
-      const validateOutput = execSync(`${cli} validate`, {
+      const validateOutput = execSync(`${cli} validate -json`, {
         cwd: workingDir,
         timeout: 60_000,
         encoding: "utf-8",
@@ -372,21 +474,47 @@ export function createToolHandlers(
       });
 
       results.push(`\n--- ${cli} validate ---`);
-      if (validateOutput) results.push(validateOutput);
-      results.push("\nValidation PASSED");
-      validationPassed = true;
-    } catch (err: unknown) {
+      const parsed = parseValidateJson(validateOutput);
+      if (parsed) {
+        validationPassed = parsed.valid;
+        if (parsed.diagnostics.length > 0) {
+          for (const d of parsed.diagnostics) {
+            const loc = d.range?.filename
+              ? ` (${d.range.filename}:${d.range.start?.line ?? "?"})`
+              : "";
+            results.push(`  [${d.severity}]${loc} ${d.summary}: ${d.detail ?? ""}`);
+          }
+        }
+        results.push(validationPassed ? "\nValidation PASSED" : "\nValidation FAILED");
+      } else {
+        // Fallback: couldn't parse JSON — show raw output
+        if (validateOutput) results.push(validateOutput);
+        results.push("\nValidation PASSED");
+        validationPassed = true;
+      }
+    } catch (e: unknown) {
       results.push(`\n--- ${cli} validate ---`);
-      const execErr = err as { stdout?: string; stderr?: string; status?: number };
-      if (execErr.stdout) results.push(execErr.stdout);
-      if (execErr.stderr) results.push(execErr.stderr);
+      const execErr = e as { stdout?: string; stderr?: string; status?: number };
+      // Try parsing structured JSON from stdout even on non-zero exit
+      const parsed = parseValidateJson(execErr.stdout ?? "");
+      if (parsed) {
+        for (const d of parsed.diagnostics) {
+          const loc = d.range?.filename
+            ? ` (${d.range.filename}:${d.range.start?.line ?? "?"})`
+            : "";
+          results.push(`  [${d.severity}]${loc} ${d.summary}: ${d.detail ?? ""}`);
+        }
+      } else {
+        if (execErr.stdout) results.push(execErr.stdout);
+        if (execErr.stderr) results.push(execErr.stderr);
+      }
       results.push(`\nValidation FAILED (exit code ${execErr.status ?? "unknown"})`);
       validationPassed = false;
     }
 
     const output = results.join("\n");
     callbacks?.onValidation?.(validationPassed, output);
-    return output;
+    return validationPassed ? ok(output) : err(output);
   }
 
   // ------------------------------------------------------------------
@@ -394,7 +522,7 @@ export function createToolHandlers(
   // ------------------------------------------------------------------
   async function listBicepFiles(
     input: Record<string, unknown>,
-  ): Promise<string> {
+  ): Promise<ToolResult> {
     const directory = path.resolve(String(input.directory ?? ""));
     const recursive =
       String(input.recursive ?? "false").trim().toLowerCase() === "true";
@@ -403,7 +531,7 @@ export function createToolHandlers(
       !fs.existsSync(directory) ||
       !fs.statSync(directory).isDirectory()
     ) {
-      return `Error: Directory not found: ${directory}`;
+      return err(`Directory not found: ${directory}`);
     }
 
     const bicepFiles: { rel: string; size: number }[] = [];
@@ -426,7 +554,7 @@ export function createToolHandlers(
     bicepFiles.sort((a, b) => a.rel.localeCompare(b.rel));
 
     if (bicepFiles.length === 0) {
-      return `No .bicep files found in ${directory}`;
+      return ok(`No .bicep files found in ${directory}`);
     }
 
     const lines = [
@@ -439,19 +567,133 @@ export function createToolHandlers(
     }
     lines.push(`\nTotal: ${bicepFiles.length} .bicep file(s)`);
 
-    return lines.join("\n");
+    return ok(lines.join("\n"));
+  }
+
+  // ------------------------------------------------------------------
+  // Tool 8: format_terraform
+  // ------------------------------------------------------------------
+  async function formatTerraform(
+    input: Record<string, unknown>,
+  ): Promise<ToolResult> {
+    const workingDir = path.resolve(String(input.working_dir ?? ""));
+
+    if (!fs.existsSync(workingDir) || !fs.statSync(workingDir).isDirectory()) {
+      return err(`Directory not found: ${workingDir}`);
+    }
+
+    // Find the CLI binary — prefer tofu, fall back to terraform
+    let cli: string | null = null;
+    try {
+      execSync("which tofu", { stdio: "pipe" });
+      cli = "tofu";
+    } catch {
+      try {
+        execSync("which terraform", { stdio: "pipe" });
+        cli = "terraform";
+      } catch {
+        // Neither found
+      }
+    }
+
+    if (!cli) {
+      return err(
+        "Neither 'tofu' nor 'terraform' found in PATH. " +
+        "Install OpenTofu (https://opentofu.org) or Terraform to enable formatting."
+      );
+    }
+
+    try {
+      const output = execSync(`${cli} fmt -recursive`, {
+        cwd: workingDir,
+        timeout: 30_000,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      const modifiedFiles = output.trim().split("\n").filter(Boolean);
+
+      // Re-read all .tf files in the directory and re-emit to UI so the
+      // formatted content is reflected in the output panel.
+      const updatedFiles: Record<string, string> = {};
+      function collectTfFiles(dir: string, base: string): void {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          const relPath = base ? `${base}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) {
+            collectTfFiles(fullPath, relPath);
+          } else if (entry.isFile() && (entry.name.endsWith(".tf") || entry.name.endsWith(".tfvars"))) {
+            updatedFiles[relPath] = fs.readFileSync(fullPath, "utf-8");
+          }
+        }
+      }
+      collectTfFiles(workingDir, "");
+
+      if (Object.keys(updatedFiles).length > 0) {
+        callbacks?.onTerraformOutput?.(updatedFiles);
+      }
+
+      if (modifiedFiles.length === 0) {
+        return ok(`${cli} fmt: All files already formatted correctly.`);
+      }
+
+      return ok(
+        `${cli} fmt: Formatted ${modifiedFiles.length} file(s):\n` +
+        modifiedFiles.map((f) => `  ${f}`).join("\n"),
+      );
+    } catch (e: unknown) {
+      const execErr = e as { stdout?: string; stderr?: string; status?: number };
+      const detail = execErr.stderr || execErr.stdout || String(e);
+      return err(`${cli} fmt failed: ${detail}`);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Tool 9: read_bicep_file_content (multi-file mode)
+  // Reads a Bicep file from the in-memory bicepFilesContext map.
+  // ------------------------------------------------------------------
+  async function readBicepFileContent(
+    input: Record<string, unknown>,
+  ): Promise<ToolResult> {
+    const filePath = String(input.file_path ?? "").trim();
+
+    if (!bicepFilesContext) {
+      return err("read_bicep_file_content is only available in multi-file mode.");
+    }
+
+    const content = bicepFilesContext[filePath];
+    if (content === undefined) {
+      const available = Object.keys(bicepFilesContext).sort().join(", ");
+      return err(
+        `File not found in project: ${filePath}\nAvailable files: ${available}`,
+      );
+    }
+
+    const lineCount = content.split("\n").length;
+    return ok(
+      `File: ${filePath}\nLines: ${lineCount}\n\n${content}`,
+    );
   }
 
   // ------------------------------------------------------------------
   // Return the handler map
   // ------------------------------------------------------------------
-  return {
+  const handlerMap: Record<string, (input: Record<string, unknown>) => Promise<ToolResult>> = {
     read_bicep_file: readBicepFile,
     parse_bicep: parseBicep,
     lookup_resource_mapping: lookupResourceMapping,
     generate_terraform: generateTerraform,
     write_terraform_files: writeTerraformFiles,
     validate_terraform: validateTerraform,
+    format_terraform: formatTerraform,
     list_bicep_files: listBicepFiles,
   };
+
+  // Add read_bicep_file_content when multi-file context is provided
+  if (bicepFilesContext) {
+    handlerMap.read_bicep_file_content = readBicepFileContent;
+  }
+
+  return handlerMap;
 }

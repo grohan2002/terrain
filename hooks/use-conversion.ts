@@ -2,7 +2,7 @@
 
 import { useCallback, useRef } from "react";
 import { useConversionStore } from "@/lib/store";
-import { sendConversionStream } from "@/lib/stream-client";
+import { sendConversionStream, sendMultiFileConversionStream } from "@/lib/stream-client";
 import type { ConversionCallbacks } from "@/lib/stream-client";
 import type { ConversionHistoryEntry } from "@/lib/types";
 import { toast } from "@/components/ui/sonner";
@@ -69,11 +69,12 @@ export function useConversion() {
           useConversionStore.getState().setProgress({ step, total, label });
         },
 
-        onDone: (fullReply, toolCalls) => {
+        onDone: (fullReply, toolCalls, costInfo) => {
           const s = useConversionStore.getState();
           s.setStatus("done");
           s.setActiveToolName(null);
           s.setProgress(null);
+          if (costInfo) s.setCostInfo(costInfo);
 
           s.addMessage({
             role: "assistant",
@@ -91,8 +92,36 @@ export function useConversion() {
             validationPassed: s.validationResult?.passed ?? false,
             agentConversation: s.messages,
             resourcesConverted: Object.keys(s.terraformFiles).length,
+            // Multi-file metadata
+            isMultiFile: s.isMultiFile,
+            ...(s.isMultiFile
+              ? {
+                  bicepFiles: s.bicepFiles,
+                  entryPoint: s.entryPoint,
+                  bicepFileCount: Object.keys(s.bicepFiles).length,
+                }
+              : {}),
           };
           s.addHistoryEntry(entry);
+
+          // Persist to server-side history (best-effort)
+          fetch("/api/history", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              bicepFilename: s.bicepFilename || "untitled.bicep",
+              bicepContent: s.bicepContent,
+              terraformFiles: s.terraformFiles,
+              validationPassed: s.validationResult?.passed ?? false,
+              model: costInfo?.model,
+              inputTokens: costInfo?.inputTokens ?? 0,
+              outputTokens: costInfo?.outputTokens ?? 0,
+              totalCostUsd: costInfo?.totalCostUsd ?? 0,
+              isMultiFile: s.isMultiFile,
+              bicepFileCount: s.isMultiFile ? Object.keys(s.bicepFiles).length : undefined,
+              entryPoint: s.isMultiFile ? s.entryPoint : undefined,
+            }),
+          }).catch(() => {}); // Swallow errors — localStorage is primary
 
           toast.success("Conversion complete", {
             description: `${Object.keys(s.terraformFiles).length} file(s) generated`,
@@ -116,7 +145,18 @@ export function useConversion() {
       };
 
       try {
-        await sendConversionStream(bicepContent, callbacks, controller.signal, apiKey);
+        // Dispatch to multi-file or single-file stream based on store state
+        if (store.isMultiFile && Object.keys(store.bicepFiles).length > 0) {
+          await sendMultiFileConversionStream(
+            store.bicepFiles,
+            store.entryPoint,
+            callbacks,
+            controller.signal,
+            apiKey,
+          );
+        } else {
+          await sendConversionStream(bicepContent, callbacks, controller.signal, apiKey);
+        }
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
           useConversionStore.getState().setStatus("error");
