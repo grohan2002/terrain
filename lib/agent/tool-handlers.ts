@@ -39,6 +39,16 @@ function isSafeReadPath(filePath: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Strip ANSI escape codes from CLI output
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1B\[[0-9;]*m/g;
+function stripAnsi(s: string): string {
+  return s.replace(ANSI_RE, "");
+}
+
+// ---------------------------------------------------------------------------
 // Terraform validate -json output parser
 // ---------------------------------------------------------------------------
 
@@ -362,6 +372,10 @@ export function createToolHandlers(
       return err("'files' must be a JSON object mapping filename -> content");
     }
 
+    // Fire callback immediately so the UI receives terraform output even if
+    // the subsequent disk write fails (e.g. read-only filesystem in Docker).
+    callbacks?.onTerraformOutput?.(files);
+
     try {
       fs.mkdirSync(outputDir, { recursive: true });
     } catch (e) {
@@ -394,9 +408,6 @@ export function createToolHandlers(
         return err(`Failed to write ${filename}: ${String(e)}`);
       }
     }
-
-    // Fire callback so the stream can emit terraform_output
-    callbacks?.onTerraformOutput?.(files);
 
     return ok([
       `Output directory: ${outputDir}`,
@@ -443,7 +454,7 @@ export function createToolHandlers(
 
     // Run init
     try {
-      const initOutput = execSync(`${cli} init -backend=false`, {
+      const initOutput = execSync(`${cli} init -backend=false -no-color`, {
         cwd: workingDir,
         timeout: 60_000,
         encoding: "utf-8",
@@ -451,12 +462,12 @@ export function createToolHandlers(
       });
 
       results.push(`\n--- ${cli} init ---`);
-      if (initOutput) results.push(initOutput);
+      if (initOutput) results.push(stripAnsi(initOutput));
     } catch (e: unknown) {
       results.push(`\n--- ${cli} init ---`);
       const execErr = e as { stdout?: string; stderr?: string; status?: number };
-      if (execErr.stdout) results.push(execErr.stdout);
-      if (execErr.stderr) results.push(execErr.stderr);
+      if (execErr.stdout) results.push(stripAnsi(execErr.stdout));
+      if (execErr.stderr) results.push(stripAnsi(execErr.stderr));
       results.push(`\n${cli} init failed (exit code ${execErr.status ?? "unknown"})`);
 
       const output = results.join("\n");
@@ -466,7 +477,7 @@ export function createToolHandlers(
 
     // Run validate with -json for structured output
     try {
-      const validateOutput = execSync(`${cli} validate -json`, {
+      const validateOutput = execSync(`${cli} validate -json -no-color`, {
         cwd: workingDir,
         timeout: 60_000,
         encoding: "utf-8",
@@ -488,7 +499,7 @@ export function createToolHandlers(
         results.push(validationPassed ? "\nValidation PASSED" : "\nValidation FAILED");
       } else {
         // Fallback: couldn't parse JSON — show raw output
-        if (validateOutput) results.push(validateOutput);
+        if (validateOutput) results.push(stripAnsi(validateOutput));
         results.push("\nValidation PASSED");
         validationPassed = true;
       }
@@ -505,8 +516,8 @@ export function createToolHandlers(
           results.push(`  [${d.severity}]${loc} ${d.summary}: ${d.detail ?? ""}`);
         }
       } else {
-        if (execErr.stdout) results.push(execErr.stdout);
-        if (execErr.stderr) results.push(execErr.stderr);
+        if (execErr.stdout) results.push(stripAnsi(execErr.stdout));
+        if (execErr.stderr) results.push(stripAnsi(execErr.stderr));
       }
       results.push(`\nValidation FAILED (exit code ${execErr.status ?? "unknown"})`);
       validationPassed = false;

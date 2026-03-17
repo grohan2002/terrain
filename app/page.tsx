@@ -20,6 +20,7 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-8 p-8">
       {/* Header */}
       <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-cta">Dashboard</p>
         <h1 className="text-2xl font-bold tracking-tight">
           Bicep to Terraform Converter
         </h1>
@@ -31,13 +32,13 @@ export default function DashboardPage() {
       {/* Quick actions */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Link href="/convert" className="group">
-          <Card className="h-full transition-colors hover:bg-accent">
+          <Card className="h-full border-l-4 border-l-cta transition-shadow hover:shadow-md">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <div className="rounded-md bg-primary/10 p-2">
-                  <FileCode className="h-5 w-5 text-primary" />
+                <div className="rounded-md bg-cta/10 p-2">
+                  <FileCode className="h-5 w-5 text-cta" />
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-cta" />
               </div>
               <CardTitle className="text-base">Convert File</CardTitle>
               <CardDescription>
@@ -48,13 +49,13 @@ export default function DashboardPage() {
         </Link>
 
         <Link href="/batch" className="group">
-          <Card className="h-full transition-colors hover:bg-accent">
+          <Card className="h-full border-l-4 border-l-cta transition-shadow hover:shadow-md">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <div className="rounded-md bg-primary/10 p-2">
-                  <Layers className="h-5 w-5 text-primary" />
+                <div className="rounded-md bg-cta/10 p-2">
+                  <Layers className="h-5 w-5 text-cta" />
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-cta" />
               </div>
               <CardTitle className="text-base">Batch Convert</CardTitle>
               <CardDescription>
@@ -65,13 +66,13 @@ export default function DashboardPage() {
         </Link>
 
         <Link href="/mappings" className="group">
-          <Card className="h-full transition-colors hover:bg-accent">
+          <Card className="h-full border-l-4 border-l-cta transition-shadow hover:shadow-md">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <div className="rounded-md bg-primary/10 p-2">
-                  <Zap className="h-5 w-5 text-primary" />
+                <div className="rounded-md bg-cta/10 p-2">
+                  <Zap className="h-5 w-5 text-cta" />
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-cta" />
               </div>
               <CardTitle className="text-base">Resource Mappings</CardTitle>
               <CardDescription>
@@ -100,7 +101,7 @@ export default function DashboardPage() {
               "Batch processing",
             ].map((feature) => (
               <div key={feature} className="flex items-center gap-2 text-sm">
-                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                <div className="h-1.5 w-1.5 rounded-full bg-cta" />
                 {feature}
               </div>
             ))}
@@ -114,7 +115,7 @@ export default function DashboardPage() {
           <CardTitle>Recent Conversions</CardTitle>
           <Link
             href="/history"
-            className="flex items-center gap-1 text-sm text-primary hover:underline"
+            className="flex items-center gap-1 text-sm text-cta hover:underline"
           >
             <History className="h-4 w-4" />
             View all

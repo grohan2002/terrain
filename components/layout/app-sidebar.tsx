@@ -64,8 +64,8 @@ export function AppSidebar() {
       >
         {/* Logo */}
         <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
-          <ArrowLeftRight className="h-5 w-5 text-primary" />
-          <span className="font-semibold text-sm">Bicep Converter</span>
+          <ArrowLeftRight className="h-5 w-5 text-cta" />
+          <span className="font-semibold text-sm text-sidebar-foreground">Bicep Converter</span>
         </div>
 
         {/* Navigation */}
@@ -81,8 +81,8 @@ export function AppSidebar() {
                 className={cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    ? "border-l-2 border-cta bg-cta/10 text-sidebar-accent-foreground"
+                    : "border-l-2 border-transparent text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 )}
                 aria-current={isActive ? "page" : undefined}
               >
@@ -98,15 +98,15 @@ export function AppSidebar() {
           {session?.user && (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0">
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-medium">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cta text-cta-foreground text-[10px] font-medium">
                   {(session.user.name ?? session.user.email ?? "U")[0].toUpperCase()}
                 </div>
                 <div className="flex flex-col min-w-0">
-                  <span className="text-xs text-muted-foreground truncate">
+                  <span className="text-xs text-sidebar-foreground/60 truncate">
                     {session.user.email ?? session.user.name}
                   </span>
                   {"role" in session.user && (
-                    <span className="text-[10px] text-muted-foreground/60 capitalize">
+                    <span className="text-[10px] text-sidebar-foreground/40 capitalize">
                       {(session.user.role as string)?.toLowerCase()}
                     </span>
                   )}
@@ -124,7 +124,7 @@ export function AppSidebar() {
             </div>
           )}
           <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Theme</span>
+            <span className="text-xs text-sidebar-foreground/60">Theme</span>
             <ThemeToggle />
           </div>
         </div>

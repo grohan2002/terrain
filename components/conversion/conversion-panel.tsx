@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Key,
   Rocket,
+  Loader2,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useConversionStore } from "@/lib/store";
@@ -54,6 +55,8 @@ import { DeployChatPanel } from "@/components/deployment/deploy-chat-panel";
 import { TestResultsPanel } from "@/components/deployment/test-results-panel";
 import { DeployProgressTracker } from "@/components/deployment/deploy-progress-tracker";
 import { DestroyDialog } from "@/components/deployment/destroy-dialog";
+import { AzureConfigDialog } from "@/components/deployment/azure-config-dialog";
+import type { AzureConfig } from "@/lib/types";
 import { SecurityPanel } from "./security-panel";
 import { PolicyPanel } from "./policy-panel";
 import { CostEstimatePanel } from "./cost-estimate-panel";
@@ -134,13 +137,25 @@ export function ConversionPanel() {
   const apiKeyInputRef = useRef<HTMLInputElement>(null);
 
   const API_KEY_STORAGE_KEY = "anthropic-api-key";
+  const AZURE_CONFIG_STORAGE_KEY = "azure-deploy-config";
 
-  // Check if server already has an API key configured
+  // Azure config dialog state
+  const [showAzureConfigDialog, setShowAzureConfigDialog] = useState(false);
+  const [serverHasAzureConfig, setServerHasAzureConfig] = useState<boolean | null>(null);
+  const pendingApiKeyRef = useRef<string | undefined>(undefined);
+
+  // Check if server already has an API key and Azure config configured
   useEffect(() => {
     fetch("/api/check-key")
       .then((res) => res.json())
-      .then((data) => setServerHasKey(data.hasKey))
-      .catch(() => setServerHasKey(false));
+      .then((data) => {
+        setServerHasKey(data.hasKey);
+        setServerHasAzureConfig(data.hasAzureConfig ?? false);
+      })
+      .catch(() => {
+        setServerHasKey(false);
+        setServerHasAzureConfig(false);
+      });
   }, []);
 
   // Focus API key input when dialog opens
@@ -178,28 +193,57 @@ export function ConversionPanel() {
   // Pending action for API key dialog (convert or deploy)
   const pendingActionRef = useRef<"convert" | "deploy">("convert");
 
-  // Attempt to start deployment — prompts for API key if needed
+  // Helper: resolve Azure config and start deployment
+  const resolveAzureAndDeploy = useCallback(
+    (resolvedApiKey?: string) => {
+      // 1. Server has ARM_* env vars → go directly
+      if (serverHasAzureConfig) {
+        startDeployment(resolvedApiKey);
+        setBottomTab("deploy-chat");
+        return;
+      }
+
+      // 2. Session has cached Azure config → use it
+      try {
+        const cachedAzure = sessionStorage.getItem(AZURE_CONFIG_STORAGE_KEY);
+        if (cachedAzure) {
+          const config = JSON.parse(cachedAzure) as AzureConfig;
+          startDeployment(resolvedApiKey, config);
+          setBottomTab("deploy-chat");
+          return;
+        }
+      } catch {
+        // Ignore parse errors
+      }
+
+      // 3. Show Azure config dialog (store API key for use after submit)
+      pendingApiKeyRef.current = resolvedApiKey;
+      setShowAzureConfigDialog(true);
+    },
+    [serverHasAzureConfig, startDeployment],
+  );
+
+  // Attempt to start deployment — prompts for API key then Azure config
   const handleDeploy = useCallback(() => {
-    // 1. Server has env var → no key needed
+    // Stage A: Resolve Anthropic API key
     if (serverHasKey) {
-      startDeployment();
-      setBottomTab("deploy-chat");
+      // Server has env var → no key needed, proceed to Azure config
+      resolveAzureAndDeploy();
       return;
     }
 
-    // 2. Session has cached key → use it
     const cachedKey = sessionStorage.getItem(API_KEY_STORAGE_KEY);
     if (cachedKey) {
-      startDeployment(cachedKey);
-      setBottomTab("deploy-chat");
+      // Session has cached key → proceed to Azure config
+      resolveAzureAndDeploy(cachedKey);
       return;
     }
 
-    // 3. Show dialog to ask for key
+    // Need API key first, then Azure config
     pendingActionRef.current = "deploy";
     setApiKeyInput("");
     setShowApiKeyDialog(true);
-  }, [serverHasKey, startDeployment]);
+  }, [serverHasKey, resolveAzureAndDeploy]);
 
   // Submit the API key from dialog and start conversion or deployment
   const handleApiKeySubmit = useCallback(() => {
@@ -214,12 +258,22 @@ export function ConversionPanel() {
     setApiKeyInput("");
 
     if (pendingActionRef.current === "deploy") {
-      startDeployment(trimmed);
-      setBottomTab("deploy-chat");
+      // API key resolved — now check Azure config
+      resolveAzureAndDeploy(trimmed);
     } else {
       startConversion(undefined, undefined, trimmed);
     }
-  }, [apiKeyInput, rememberForSession, startConversion, startDeployment]);
+  }, [apiKeyInput, rememberForSession, startConversion, resolveAzureAndDeploy]);
+
+  // Handle Azure config dialog submission
+  const handleAzureConfigSubmit = useCallback(
+    (config: AzureConfig) => {
+      startDeployment(pendingApiKeyRef.current, config);
+      setBottomTab("deploy-chat");
+      pendingApiKeyRef.current = undefined;
+    },
+    [startDeployment],
+  );
 
   const fileNames = useMemo(() => Object.keys(terraformFiles), [terraformFiles]);
 
@@ -353,13 +407,13 @@ export function ConversionPanel() {
           )}
           {isConverting ? (
             <Button variant="destructive" size="sm" onClick={() => setShowCancelDialog(true)}>
-              <Square className="h-3.5 w-3.5" />
-              Cancel
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Stop Converting
             </Button>
           ) : (
             <Tooltip>
               <TooltipTrigger
-                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground shadow hover:bg-primary/90 h-8 px-3 text-xs [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-cta text-cta-foreground shadow-sm hover:bg-cta/90 h-8 px-3 text-xs [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
                 onClick={handleConvert}
                 disabled={!bicepContent}
               >
@@ -377,7 +431,7 @@ export function ConversionPanel() {
               variant="outline"
               size="sm"
               onClick={handleDeploy}
-              className="border-orange-500/30 text-orange-600 hover:bg-orange-500/10"
+              className="border-cta/30 text-cta hover:bg-cta/10"
             >
               <Rocket className="h-3.5 w-3.5" />
               Deploy &amp; Test
@@ -634,6 +688,13 @@ export function ConversionPanel() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Azure config dialog */}
+      <AzureConfigDialog
+        open={showAzureConfigDialog}
+        onOpenChange={setShowAzureConfigDialog}
+        onSubmit={handleAzureConfigSubmit}
+      />
     </div>
   );
 }

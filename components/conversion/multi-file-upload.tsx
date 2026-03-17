@@ -216,7 +216,7 @@ export function MultiFileUpload() {
   return (
     <div
       className={`flex h-full flex-col items-center justify-center gap-4 p-6 rounded-lg border-2 border-dashed transition-colors ${
-        dragActive ? "border-primary bg-primary/5" : "border-muted"
+        dragActive ? "border-cta bg-cta/5" : "border-muted"
       }`}
       onDragOver={(e) => {
         e.preventDefault();

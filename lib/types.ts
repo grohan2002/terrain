@@ -88,6 +88,18 @@ export interface ConversionProgress {
 }
 
 // ---------------------------------------------------------------------------
+// Azure Deployment Configuration
+// ---------------------------------------------------------------------------
+
+/** Azure Service Principal credentials for deployment. */
+export interface AzureConfig {
+  subscriptionId: string;
+  tenantId: string;
+  clientId: string;
+  clientSecret: string;
+}
+
+// ---------------------------------------------------------------------------
 // Deployment Agent Types
 // ---------------------------------------------------------------------------
 

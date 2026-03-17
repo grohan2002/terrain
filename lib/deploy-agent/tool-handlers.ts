@@ -7,6 +7,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
 import { ok, err, type ToolResult } from "../tool-result";
+import type { AzureConfig } from "../types";
+import { buildAzureEnv } from "../azure-env";
 
 // ---------------------------------------------------------------------------
 // Callbacks for side-effects the stream layer cares about
@@ -42,7 +44,10 @@ function findCli(): string | null {
 
 export function createDeployToolHandlers(
   callbacks?: DeployToolCallbacks,
+  azureConfig?: AzureConfig,
 ): Record<string, (input: Record<string, unknown>) => Promise<ToolResult>> {
+
+  const azureEnv = buildAzureEnv(azureConfig);
 
   // ------------------------------------------------------------------
   // Tool 1: terraform_plan
@@ -71,6 +76,7 @@ export function createDeployToolHandlers(
           timeout: 120_000,
           encoding: "utf-8",
           stdio: ["pipe", "pipe", "pipe"],
+          env: azureEnv,
         },
       );
       return ok(`${cli} plan output:\n\n${output}`);
@@ -104,6 +110,7 @@ export function createDeployToolHandlers(
           timeout: 300_000,
           encoding: "utf-8",
           stdio: ["pipe", "pipe", "pipe"],
+          env: azureEnv,
         },
       );
       return ok(`${cli} apply output:\n\n${output}`);
@@ -133,6 +140,7 @@ export function createDeployToolHandlers(
         timeout: 30_000,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
+        env: azureEnv,
       });
 
       // Parse and flatten outputs for the callback
@@ -186,6 +194,7 @@ export function createDeployToolHandlers(
         timeout: 30_000,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
+        env: azureEnv,
       });
 
       const parsed = JSON.parse(output);
@@ -227,7 +236,7 @@ export function createDeployToolHandlers(
       try {
         const statusCode = execSync(
           `curl -s -o /dev/null -w "%{http_code}" --max-time ${timeout} "${target}"`,
-          { timeout: (timeout + 5) * 1000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+          { timeout: (timeout + 5) * 1000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env: azureEnv },
         ).trim();
 
         const actual = parseInt(statusCode, 10);
@@ -248,7 +257,7 @@ export function createDeployToolHandlers(
       try {
         const output = execSync(
           `dig +short "${target}" 2>/dev/null || nslookup "${target}" 2>/dev/null | grep -A1 "Name:" | tail -1`,
-          { timeout: timeout * 1000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+          { timeout: timeout * 1000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env: azureEnv },
         ).trim();
 
         const passed = output.length > 0;
@@ -272,7 +281,7 @@ export function createDeployToolHandlers(
       try {
         execSync(
           `nc -z -w ${timeout} "${host}" ${port}`,
-          { timeout: (timeout + 5) * 1000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+          { timeout: (timeout + 5) * 1000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env: azureEnv },
         );
 
         callbacks?.onTestResult?.(`connectivity:tcp:${target}`, true, `TCP port ${port} is open`);
@@ -313,7 +322,7 @@ export function createDeployToolHandlers(
     try {
       const output = execSync(
         `az resource show --ids "${resourceId}" -o json`,
-        { timeout: 30_000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+        { timeout: 30_000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env: azureEnv },
       );
       resourceJson = JSON.parse(output);
     } catch (e: unknown) {
@@ -373,6 +382,7 @@ export function createDeployToolHandlers(
           timeout: 300_000,
           encoding: "utf-8",
           stdio: ["pipe", "pipe", "pipe"],
+          env: azureEnv,
         },
       );
       return ok(`${cli} destroy output:\n\n${output}`);

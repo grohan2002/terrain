@@ -1,16 +1,17 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Upload, FileCode, FolderUp } from "lucide-react";
+import { Upload, FileCode, FolderUp, Github } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConversionStore } from "@/lib/store";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
 import { MultiFileUpload } from "./multi-file-upload";
+import { GitHubImport } from "./github-import";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
-type UploadMode = "single" | "project";
+type UploadMode = "single" | "project" | "github";
 
 export function FileUpload() {
   const [dragOver, setDragOver] = useState(false);
@@ -88,12 +89,23 @@ export function FileUpload() {
           <FolderUp className="h-3 w-3" />
           Project
         </Button>
+        <Button
+          variant={mode === "github" ? "secondary" : "ghost"}
+          size="sm"
+          className="h-7 text-xs gap-1.5"
+          onClick={() => setMode("github")}
+        >
+          <Github className="h-3 w-3" />
+          GitHub
+        </Button>
       </div>
 
       {/* Upload area */}
       <div className="flex-1 min-h-0">
         {mode === "project" ? (
           <MultiFileUpload />
+        ) : mode === "github" ? (
+          <GitHubImport />
         ) : (
           <div
             role="region"
@@ -101,7 +113,7 @@ export function FileUpload() {
             className={cn(
               "flex h-full flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed p-8 transition-colors",
               dragOver
-                ? "border-primary bg-primary/5"
+                ? "border-cta bg-cta/5"
                 : "border-border hover:border-muted-foreground/50"
             )}
             onDragOver={(e) => {
@@ -113,7 +125,7 @@ export function FileUpload() {
           >
             <div className="rounded-full bg-muted p-4">
               {dragOver ? (
-                <FileCode className="h-8 w-8 text-primary" />
+                <FileCode className="h-8 w-8 text-cta" />
               ) : (
                 <Upload className="h-8 w-8 text-muted-foreground" />
               )}

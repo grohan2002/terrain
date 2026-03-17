@@ -24,7 +24,7 @@ export function ThemeToggle() {
     <Tooltip>
       <TooltipTrigger
         onClick={() => setTheme(isDark ? "light" : "dark")}
-        className={buttonVariants({ variant: "outline", size: "icon" })}
+        className={buttonVariants({ variant: "ghost", size: "icon" }) + " text-sidebar-foreground hover:bg-sidebar-accent"}
         aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
       >
         {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}

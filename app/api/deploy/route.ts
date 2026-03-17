@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { terraformFiles, workingDir, resourceGroupName, bicepContent, apiKey } =
+  const { terraformFiles, workingDir, resourceGroupName, bicepContent, apiKey, azureConfig } =
     parsed.data;
 
   log.info(
@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
     sendEvent,
     signal,
     apiKey,
+    azureConfig,
   )
     .then(() => {
       log.info("Deployment completed");

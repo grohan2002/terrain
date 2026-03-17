@@ -5,5 +5,11 @@
 
 export async function GET() {
   const hasKey = !!process.env.ANTHROPIC_API_KEY;
-  return Response.json({ hasKey });
+  const hasAzureConfig = !!(
+    process.env.ARM_SUBSCRIPTION_ID &&
+    process.env.ARM_TENANT_ID &&
+    process.env.ARM_CLIENT_ID &&
+    process.env.ARM_CLIENT_SECRET
+  );
+  return Response.json({ hasKey, hasAzureConfig });
 }

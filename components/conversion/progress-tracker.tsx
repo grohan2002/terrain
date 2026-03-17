@@ -38,7 +38,7 @@ export function ProgressTracker() {
           return (
             <div key={step.key} className="flex items-center gap-2">
               {isComplete ? (
-                <Check className="h-4 w-4 text-primary shrink-0" />
+                <Check className="h-4 w-4 text-cta shrink-0" />
               ) : isActive ? (
                 <Loader2 className="h-4 w-4 text-primary animate-spin shrink-0" />
               ) : (
@@ -74,7 +74,7 @@ export function ProgressTracker() {
         </div>
       )}
       {status === "done" && (
-        <p className="mt-3 text-xs font-medium text-primary">
+        <p className="mt-3 text-xs font-medium text-cta">
           Conversion complete
         </p>
       )}

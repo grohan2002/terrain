@@ -101,6 +101,147 @@ describe("handler map", () => {
     expect(names).toContain("check_resource_config");
     expect(names).toContain("terraform_destroy");
   });
+
+  it("accepts optional azureConfig parameter", () => {
+    setupMock("tofu");
+    const handlers = createDeployToolHandlers(undefined, {
+      subscriptionId: "sub-123",
+      tenantId: "tenant-456",
+      clientId: "client-789",
+      clientSecret: "secret-abc",
+    });
+    expect(Object.keys(handlers)).toHaveLength(7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// azureConfig env variable threading
+// ---------------------------------------------------------------------------
+
+describe("azureConfig environment threading", () => {
+  const azureConfig = {
+    subscriptionId: "test-sub-id",
+    tenantId: "test-tenant-id",
+    clientId: "test-client-id",
+    clientSecret: "test-client-secret",
+  };
+
+  it("passes ARM_* env vars to terraform_plan execSync when azureConfig is provided", async () => {
+    setupMock("tofu", { "tofu plan": "Plan: 0 to add." });
+    const handlers = createDeployToolHandlers(undefined, azureConfig);
+    await handlers.terraform_plan({ working_dir: testDir });
+
+    const planCall = mockExecSync.mock.calls.find(
+      ([cmd]) => String(cmd).includes("plan"),
+    );
+    expect(planCall).toBeDefined();
+    const opts = planCall![1] as Record<string, unknown>;
+    const env = opts.env as Record<string, string>;
+    expect(env.ARM_SUBSCRIPTION_ID).toBe("test-sub-id");
+    expect(env.ARM_TENANT_ID).toBe("test-tenant-id");
+    expect(env.ARM_CLIENT_ID).toBe("test-client-id");
+    expect(env.ARM_CLIENT_SECRET).toBe("test-client-secret");
+  });
+
+  it("passes ARM_* env vars to terraform_apply execSync when azureConfig is provided", async () => {
+    setupMock("tofu", { "tofu apply": "Apply complete!" });
+    const handlers = createDeployToolHandlers(undefined, azureConfig);
+    await handlers.terraform_apply({ working_dir: testDir });
+
+    const applyCall = mockExecSync.mock.calls.find(
+      ([cmd]) => String(cmd).includes("apply"),
+    );
+    expect(applyCall).toBeDefined();
+    const opts = applyCall![1] as Record<string, unknown>;
+    const env = opts.env as Record<string, string>;
+    expect(env.ARM_SUBSCRIPTION_ID).toBe("test-sub-id");
+    expect(env.ARM_CLIENT_SECRET).toBe("test-client-secret");
+  });
+
+  it("passes ARM_* env vars to get_terraform_outputs execSync", async () => {
+    const mockOutputs = JSON.stringify({ name: { value: "test" } });
+    setupMock("tofu", { "tofu output": mockOutputs });
+    const handlers = createDeployToolHandlers(undefined, azureConfig);
+    await handlers.get_terraform_outputs({ working_dir: testDir });
+
+    const outputCall = mockExecSync.mock.calls.find(
+      ([cmd]) => String(cmd).includes("output -json"),
+    );
+    expect(outputCall).toBeDefined();
+    const opts = outputCall![1] as Record<string, unknown>;
+    const env = opts.env as Record<string, string>;
+    expect(env.ARM_SUBSCRIPTION_ID).toBe("test-sub-id");
+  });
+
+  it("passes ARM_* env vars to check_azure_resource execSync", async () => {
+    const resource = JSON.stringify({ properties: { provisioningState: "Succeeded" } });
+    setupMock("tofu", { "az resource show": resource });
+    const handlers = createDeployToolHandlers(undefined, azureConfig);
+    await handlers.check_azure_resource({
+      resource_id: "/subscriptions/abc/storageAccounts/sa1",
+    });
+
+    const azCall = mockExecSync.mock.calls.find(
+      ([cmd]) => String(cmd).includes("az resource show"),
+    );
+    expect(azCall).toBeDefined();
+    const opts = azCall![1] as Record<string, unknown>;
+    const env = opts.env as Record<string, string>;
+    expect(env.ARM_CLIENT_ID).toBe("test-client-id");
+  });
+
+  it("passes ARM_* env vars to run_connectivity_test (http) execSync", async () => {
+    setupMock("tofu", { curl: "200" });
+    const handlers = createDeployToolHandlers(undefined, azureConfig);
+    await handlers.run_connectivity_test({
+      test_type: "http",
+      target: "https://example.com",
+    });
+
+    const curlCall = mockExecSync.mock.calls.find(
+      ([cmd]) => String(cmd).includes("curl"),
+    );
+    expect(curlCall).toBeDefined();
+    const opts = curlCall![1] as Record<string, unknown>;
+    const env = opts.env as Record<string, string>;
+    expect(env.ARM_TENANT_ID).toBe("test-tenant-id");
+  });
+
+  it("passes ARM_* env vars to terraform_destroy execSync", async () => {
+    setupMock("tofu", { "tofu destroy": "Destroy complete!" });
+    const handlers = createDeployToolHandlers(undefined, azureConfig);
+    await handlers.terraform_destroy({ working_dir: testDir });
+
+    const destroyCall = mockExecSync.mock.calls.find(
+      ([cmd]) => String(cmd).includes("destroy"),
+    );
+    expect(destroyCall).toBeDefined();
+    const opts = destroyCall![1] as Record<string, unknown>;
+    const env = opts.env as Record<string, string>;
+    expect(env.ARM_SUBSCRIPTION_ID).toBe("test-sub-id");
+    expect(env.ARM_CLIENT_SECRET).toBe("test-client-secret");
+  });
+
+  it("does not set ARM_* env vars when azureConfig is undefined", async () => {
+    // Clear any ARM_* vars from process.env
+    delete process.env.ARM_SUBSCRIPTION_ID;
+    delete process.env.ARM_TENANT_ID;
+    delete process.env.ARM_CLIENT_ID;
+    delete process.env.ARM_CLIENT_SECRET;
+
+    setupMock("tofu", { "tofu plan": "Plan: 0 to add." });
+    const handlers = createDeployToolHandlers();
+    await handlers.terraform_plan({ working_dir: testDir });
+
+    const planCall = mockExecSync.mock.calls.find(
+      ([cmd]) => String(cmd).includes("plan"),
+    );
+    expect(planCall).toBeDefined();
+    const opts = planCall![1] as Record<string, unknown>;
+    const env = opts.env as Record<string, string>;
+    expect(env.ARM_SUBSCRIPTION_ID).toBeUndefined();
+    expect(env.ARM_CLIENT_SECRET).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

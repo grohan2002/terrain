@@ -49,6 +49,7 @@ export default function MappingsPage() {
   return (
     <div className="flex flex-col gap-6 p-8">
       <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-cta">Reference</p>
         <h1 className="text-2xl font-bold tracking-tight">
           Resource Mappings
         </h1>

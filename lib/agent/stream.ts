@@ -11,6 +11,7 @@ import type {
   ContentBlock,
   ToolResultBlockParam,
   ToolUseBlock,
+  TextBlock,
 } from "@anthropic-ai/sdk/resources/messages";
 import { bicepTools } from "./tools";
 import { createToolHandlers, type ToolHandlerCallbacks } from "./tool-handlers";
@@ -19,6 +20,7 @@ import { withRetry } from "../retry";
 import { calculateCost, addCosts, type CostInfo } from "../cost";
 import { selectModel, selectModelMultiFile } from "../model-router";
 import { buildDependencyGraph, buildMultiFileUserMessage, summarizeContext } from "../bicep-modules";
+import { logger } from "../logger";
 import type { BicepFiles, StreamEvent, ToolCallInfo } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -27,6 +29,98 @@ import type { BicepFiles, StreamEvent, ToolCallInfo } from "../types";
 
 const MAX_TOKENS = 8192;
 const MAX_TOOL_ROUNDS = 30;
+
+/**
+ * Minimum inter-round delay (ms) to pace API calls and stay under
+ * per-minute input-token rate limits. Each API call sends the full message
+ * history, so spacing calls 8-12s apart keeps ~7 calls/min × ~4K tokens ≈ 28K.
+ */
+const ROUND_PACING_MS = 8_000;
+
+/**
+ * After this many rounds, compress older messages to reduce the growing
+ * input-token count. Keeps the first user message + last N exchanges intact.
+ */
+const COMPRESS_AFTER_ROUND = 5;
+const KEEP_RECENT_EXCHANGES = 3; // keep last 3 assistant+user pairs
+
+// ---------------------------------------------------------------------------
+// Rate-limit pacing: wait between rounds to avoid bursting token budget
+// ---------------------------------------------------------------------------
+
+let lastApiCallTime = 0;
+
+async function paceApiCall(): Promise<void> {
+  const now = Date.now();
+  const elapsed = now - lastApiCallTime;
+  if (lastApiCallTime > 0 && elapsed < ROUND_PACING_MS) {
+    const waitMs = ROUND_PACING_MS - elapsed;
+    logger.info({ waitMs }, "Pacing: waiting between API rounds");
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+  lastApiCallTime = Date.now();
+}
+
+// ---------------------------------------------------------------------------
+// Message history compression — summarize older tool exchanges to reduce
+// input tokens while preserving the original user request and recent context
+// ---------------------------------------------------------------------------
+
+function compressMessages(messages: MessageParam[], round: number): MessageParam[] {
+  // Only compress after threshold
+  if (round <= COMPRESS_AFTER_ROUND) return messages;
+
+  // messages[0] is always the original user prompt — keep it
+  // Remaining messages come in pairs: [assistant, user(tool_results)]
+  const pairCount = (messages.length - 1) / 2;
+  if (pairCount <= KEEP_RECENT_EXCHANGES) return messages;
+
+  const pairsToCompress = pairCount - KEEP_RECENT_EXCHANGES;
+  const compressUpToIndex = 1 + pairsToCompress * 2; // index of first pair to keep
+
+  // Build a compact summary of the compressed exchanges
+  const summaryParts: string[] = [];
+  for (let i = 1; i < compressUpToIndex; i += 2) {
+    const assistantMsg = messages[i];
+    if (assistantMsg.role === "assistant" && Array.isArray(assistantMsg.content)) {
+      const toolNames = (assistantMsg.content as ContentBlock[])
+        .filter((b): b is ToolUseBlock => b.type === "tool_use")
+        .map((b) => b.name);
+      const textParts = (assistantMsg.content as ContentBlock[])
+        .filter((b): b is TextBlock => b.type === "text")
+        .map((b) => {
+          // Truncate long text blocks
+          const text = b.text;
+          return text.length > 200 ? text.slice(0, 200) + "…" : text;
+        });
+      if (toolNames.length > 0) {
+        summaryParts.push(`Tools called: ${toolNames.join(", ")}`);
+      }
+      if (textParts.length > 0) {
+        summaryParts.push(textParts.join(" "));
+      }
+    }
+  }
+
+  const summaryText =
+    "[Earlier tool exchanges compressed to save tokens]\n" +
+    summaryParts.join("\n");
+
+  // Reconstruct: original user msg + summary + recent pairs
+  const compressed: MessageParam[] = [
+    messages[0], // original user prompt
+    { role: "assistant", content: [{ type: "text", text: summaryText }] },
+    { role: "user", content: [{ type: "text", text: "Continue with the conversion." }] },
+    ...messages.slice(compressUpToIndex),
+  ];
+
+  logger.info(
+    { originalCount: messages.length, compressedCount: compressed.length, pairsCompressed: pairsToCompress },
+    "Compressed message history",
+  );
+
+  return compressed;
+}
 
 // ---------------------------------------------------------------------------
 // Human-readable labels for tool names
@@ -117,6 +211,12 @@ export async function chatStream(
       label: round === 1 ? "Starting conversion" : `Tool round ${round}`,
     });
 
+    // Pace API calls to stay under per-minute token rate limits
+    await paceApiCall();
+
+    // Compress older messages to reduce input tokens
+    const messagesToSend = compressMessages(messages, round);
+
     // Create the streaming request with retry
     const stream = await withRetry(() =>
       Promise.resolve(
@@ -125,7 +225,7 @@ export async function chatStream(
           max_tokens: MAX_TOKENS,
           system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
           tools: bicepTools,
-          messages,
+          messages: messagesToSend,
         }),
       ),
     );
@@ -350,6 +450,12 @@ export async function chatStreamMultiFile(
       label: round === 1 ? "Starting multi-file conversion" : `Tool round ${round}`,
     });
 
+    // Pace API calls to stay under per-minute token rate limits
+    await paceApiCall();
+
+    // Compress older messages to reduce input tokens
+    const messagesToSend = compressMessages(messages, round);
+
     const stream = await withRetry(() =>
       Promise.resolve(
         client.messages.stream({
@@ -357,7 +463,7 @@ export async function chatStreamMultiFile(
           max_tokens: MAX_TOKENS_MULTI,
           system: [{ type: "text", text: SYSTEM_PROMPT_MULTI_FILE, cache_control: { type: "ephemeral" } }],
           tools: bicepTools,
-          messages,
+          messages: messagesToSend,
         }),
       ),
     );

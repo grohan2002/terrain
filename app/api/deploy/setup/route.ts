@@ -9,6 +9,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { execSync } from "node:child_process";
 import { DeploySetupSchema } from "@/lib/schemas";
+import { buildAzureEnv } from "@/lib/azure-env";
 import { createRequestLogger } from "@/lib/logger";
 import { v4 as uuid } from "uuid";
 
@@ -34,7 +35,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { terraformFiles, location } = parsed.data;
+  const { terraformFiles, location, azureConfig } = parsed.data;
+  const azureEnv = buildAzureEnv(azureConfig);
 
   // Generate unique resource group name
   const suffix = crypto.randomBytes(4).toString("hex");
@@ -89,11 +91,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Authenticate with Azure if Service Principal credentials are provided
+    if (azureConfig) {
+      try {
+        execSync(
+          `az login --service-principal -u "${azureConfig.clientId}" -p "${azureConfig.clientSecret}" --tenant "${azureConfig.tenantId}" -o none`,
+          { timeout: 30_000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env: azureEnv },
+        );
+        // Set the subscription context
+        execSync(
+          `az account set --subscription "${azureConfig.subscriptionId}"`,
+          { timeout: 15_000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env: azureEnv },
+        );
+      } catch (err: unknown) {
+        const execErr = err as { stderr?: string };
+        log.error({ error: execErr.stderr }, "Azure login failed");
+        return Response.json(
+          { error: `Azure authentication failed: ${execErr.stderr ?? "unknown error"}` },
+          { status: 401 },
+        );
+      }
+    }
+
     // Create resource group
     try {
       execSync(
         `az group create -n "${resourceGroupName}" -l "${location}" -o none`,
-        { timeout: 30_000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+        { timeout: 30_000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env: azureEnv },
       );
     } catch (err: unknown) {
       const execErr = err as { stderr?: string };
@@ -111,6 +135,7 @@ export async function POST(request: NextRequest) {
         timeout: 120_000,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
+        env: azureEnv,
       });
     } catch (err: unknown) {
       const execErr = err as { stdout?: string; stderr?: string; status?: number };

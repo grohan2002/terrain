@@ -294,6 +294,12 @@ export const useConversionStore = create<ConversionState>()((set) => ({
   resetDeployment: () => set(initialDeploymentState),
 }));
 
+// Dev-only: expose store on window for manual/E2E testing
+if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__store = useConversionStore;
+}
+
 // ---------------------------------------------------------------------------
 // Computed selectors
 // ---------------------------------------------------------------------------

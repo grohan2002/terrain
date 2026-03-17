@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import type {
+  AzureConfig,
   DeployStreamEvent,
   DeploySummary,
   ToolCallInfo,
@@ -40,6 +41,7 @@ export async function sendDeployStream(
   callbacks: DeployCallbacks,
   signal?: AbortSignal,
   apiKey?: string,
+  azureConfig?: AzureConfig,
 ): Promise<void> {
   let response: Response;
 
@@ -53,6 +55,7 @@ export async function sendDeployStream(
         resourceGroupName,
         bicepContent,
         ...(apiKey ? { apiKey } : {}),
+        ...(azureConfig ? { azureConfig } : {}),
       }),
       signal,
     });

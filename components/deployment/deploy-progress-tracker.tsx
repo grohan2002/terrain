@@ -66,7 +66,7 @@ export function DeployProgressTracker() {
                 className={cn(
                   "h-px w-4 shrink-0",
                   status === "done" || status === "active"
-                    ? "bg-primary"
+                    ? "bg-cta"
                     : "bg-border"
                 )}
               />
@@ -74,7 +74,7 @@ export function DeployProgressTracker() {
             <div
               className={cn(
                 "flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap",
-                status === "active" && "bg-primary/10 text-primary",
+                status === "active" && "bg-cta/10 text-cta",
                 status === "done" && "text-muted-foreground",
                 status === "pending" && "text-muted-foreground/50",
                 status === "error" && "text-destructive"

@@ -10,6 +10,7 @@ interface RateLimitConfig {
 const BUCKETS: Record<string, RateLimitConfig> = {
   conversion: { maxRequests: 10, windowMs: 60_000 },
   deploy: { maxRequests: 2, windowMs: 60_000 },
+  githubScan: { maxRequests: 5, windowMs: 60_000 },
 };
 
 // In-memory store (per-process, sufficient for development)

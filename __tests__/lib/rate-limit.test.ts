@@ -47,6 +47,14 @@ describe("checkRateLimit", () => {
     expect(result2.allowed).toBe(true);
   });
 
+  it("githubScan bucket allows 5 then blocks", () => {
+    const ip = "test-ip-github";
+    for (let i = 0; i < 5; i++) {
+      expect(checkRateLimit("githubScan", ip).allowed).toBe(true);
+    }
+    expect(checkRateLimit("githubScan", ip).allowed).toBe(false);
+  });
+
   it("returns allowed for unknown bucket", () => {
     const result = checkRateLimit("unknown" as "conversion", "test-ip");
     expect(result.allowed).toBe(true);

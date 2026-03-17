@@ -17,7 +17,10 @@ type AuditAction =
   | "deployment.failed"
   | "destroy.started"
   | "destroy.completed"
-  | "destroy.failed";
+  | "destroy.failed"
+  | "github_scan.started"
+  | "github_scan.completed"
+  | "github_scan.failed";
 
 export async function auditLog(
   action: AuditAction,

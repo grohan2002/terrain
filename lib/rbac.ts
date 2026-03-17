@@ -22,6 +22,7 @@ const ROUTE_ROLES: Record<string, Role> = {
   "/api/cost-estimate": "CONVERTER",
   "/api/policy": "CONVERTER",
   "/api/history": "VIEWER",
+  "/api/github/scan": "CONVERTER",
   "/api/admin/audit": "ADMIN",
 };
 

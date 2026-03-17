@@ -17,7 +17,7 @@ import { createDeployToolHandlers, type DeployToolCallbacks } from "./tool-handl
 import { DEPLOY_SYSTEM_PROMPT } from "./system-prompt";
 import { withRetry } from "../retry";
 import { calculateCost, addCosts, type CostInfo } from "../cost";
-import type { DeployStreamEvent, ToolCallInfo, DeploySummary } from "../types";
+import type { AzureConfig, DeployStreamEvent, ToolCallInfo, DeploySummary } from "../types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -56,6 +56,7 @@ export async function deployStream(
   emit: (event: DeployStreamEvent) => void,
   signal?: AbortSignal,
   apiKey?: string,
+  azureConfig?: AzureConfig,
 ): Promise<void> {
   const client = apiKey ? new Anthropic({ apiKey }) : new Anthropic();
 
@@ -85,7 +86,7 @@ export async function deployStream(
       emit({ type: "outputs", outputs });
     },
   };
-  const handlers = createDeployToolHandlers(handlerCallbacks);
+  const handlers = createDeployToolHandlers(handlerCallbacks, azureConfig);
 
   // Build the terraform files summary for context
   const filesSummary = Object.entries(terraformFiles)

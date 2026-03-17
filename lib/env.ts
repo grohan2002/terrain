@@ -14,6 +14,12 @@ const envSchema = z.object({
   AUTH_GITHUB_ID: z.string().optional(),
   AUTH_GITHUB_SECRET: z.string().optional(),
 
+  // Azure Deployment (optional, for Deploy & Test)
+  ARM_SUBSCRIPTION_ID: z.string().optional(),
+  ARM_TENANT_ID: z.string().optional(),
+  ARM_CLIENT_ID: z.string().optional(),
+  ARM_CLIENT_SECRET: z.string().optional(),
+
   // Redis (rate limiting in production)
   UPSTASH_REDIS_REST_URL: z.string().url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),

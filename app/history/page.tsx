@@ -1,8 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { History, FileCode, FolderOpen } from "lucide-react";
+import { History, FileCode, FolderOpen, Rocket } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { useConversionStore } from "@/lib/store";
+import { hasPermission } from "@/lib/rbac";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -20,6 +22,10 @@ export default function HistoryPage() {
   const setBicepContent = useConversionStore((s) => s.setBicepContent);
   const setBicepFiles = useConversionStore((s) => s.setBicepFiles);
   const setTerraformFiles = useConversionStore((s) => s.setTerraformFiles);
+  const setStatus = useConversionStore((s) => s.setStatus);
+  const { data: session } = useSession();
+  const userRole = session?.user?.role ?? "CONVERTER";
+  const canDeploy = hasPermission(userRole, "DEPLOYER");
   const router = useRouter();
 
   const handleLoad = (entry: (typeof history)[0]) => {
@@ -30,6 +36,8 @@ export default function HistoryPage() {
       setBicepContent(entry.bicepContent, entry.bicepFile);
     }
     setTerraformFiles(entry.terraformFiles);
+    // Mark as done so Deploy & Test button appears on /convert
+    setStatus("done");
     toast.success("Loaded conversion", {
       description: entry.isMultiFile
         ? `Project (${entry.bicepFileCount ?? Object.keys(entry.bicepFiles ?? {}).length} files)`
@@ -38,9 +46,25 @@ export default function HistoryPage() {
     router.push("/convert");
   };
 
+  const handleDeploy = (entry: (typeof history)[0]) => {
+    // Load the conversion and navigate to /convert ready for deployment
+    if (entry.isMultiFile && entry.bicepFiles && entry.entryPoint) {
+      setBicepFiles(entry.bicepFiles, entry.entryPoint);
+    } else {
+      setBicepContent(entry.bicepContent, entry.bicepFile);
+    }
+    setTerraformFiles(entry.terraformFiles);
+    setStatus("done");
+    toast.success("Ready to deploy", {
+      description: `Loaded "${entry.isMultiFile ? `Project (${entry.bicepFileCount ?? "?"} files)` : entry.bicepFile}" — click Deploy & Test to proceed`,
+    });
+    router.push("/convert");
+  };
+
   return (
     <div className="flex flex-col gap-6 p-8">
       <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-cta">History</p>
         <h1 className="text-2xl font-bold tracking-tight">
           Conversion History
         </h1>
@@ -105,13 +129,26 @@ export default function HistoryPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="px-4 text-right">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleLoad(entry)}
-                    >
-                      Load
-                    </Button>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleLoad(entry)}
+                      >
+                        Load
+                      </Button>
+                      {canDeploy && entry.validationPassed && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeploy(entry)}
+                          className="border-cta/30 text-cta hover:bg-cta/10"
+                        >
+                          <Rocket className="h-3.5 w-3.5" />
+                          Deploy
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

@@ -4,8 +4,19 @@ import { useCallback, useRef } from "react";
 import { useConversionStore } from "@/lib/store";
 import { sendDeployStream } from "@/lib/deploy-stream-client";
 import type { DeployCallbacks } from "@/lib/deploy-stream-client";
-import type { TestResult } from "@/lib/types";
+import type { AzureConfig, TestResult } from "@/lib/types";
 import { toast } from "@/components/ui/sonner";
+
+const AZURE_CONFIG_STORAGE_KEY = "azure-deploy-config";
+
+function getAzureConfigFromSession(): AzureConfig | undefined {
+  try {
+    const raw = sessionStorage.getItem(AZURE_CONFIG_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export function useDeployment() {
   const abortRef = useRef<AbortController | null>(null);
@@ -13,7 +24,7 @@ export function useDeployment() {
   // ------------------------------------------------------------------
   // startDeployment — setup then SSE agent loop
   // ------------------------------------------------------------------
-  const startDeployment = useCallback(async (apiKey?: string) => {
+  const startDeployment = useCallback(async (apiKey?: string, azureConfig?: AzureConfig) => {
     const store = useConversionStore.getState();
     const terraformFiles = store.terraformFiles;
     const bicepContent = store.bicepContent;
@@ -50,7 +61,7 @@ export function useDeployment() {
       const setupRes = await fetch("/api/deploy/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ terraformFiles }),
+        body: JSON.stringify({ terraformFiles, ...(azureConfig ? { azureConfig } : {}) }),
         signal: controller.signal,
       });
 
@@ -175,6 +186,7 @@ export function useDeployment() {
         callbacks,
         controller.signal,
         apiKey,
+        azureConfig,
       );
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
@@ -213,7 +225,11 @@ export function useDeployment() {
       const res = await fetch("/api/deploy/destroy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workingDir, resourceGroupName }),
+        body: JSON.stringify({
+          workingDir,
+          resourceGroupName,
+          ...(getAzureConfigFromSession() ? { azureConfig: getAzureConfigFromSession() } : {}),
+        }),
       });
 
       const data = await res.json();

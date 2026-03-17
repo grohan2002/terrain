@@ -5,6 +5,7 @@
 import { NextRequest } from "next/server";
 import { execSync } from "node:child_process";
 import { DeployDestroySchema } from "@/lib/schemas";
+import { buildAzureEnv } from "@/lib/azure-env";
 import { createRequestLogger } from "@/lib/logger";
 import { auditLog } from "@/lib/audit";
 import { v4 as uuid } from "uuid";
@@ -31,11 +32,33 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { workingDir, resourceGroupName } = parsed.data;
+  const { workingDir, resourceGroupName, azureConfig } = parsed.data;
+  const azureEnv = buildAzureEnv(azureConfig);
 
   log.info({ workingDir, resourceGroupName }, "Destroy started");
   const ip = request.headers.get("x-forwarded-for") ?? "127.0.0.1";
   auditLog("destroy.started", { resourceGroupName }, undefined, ip);
+
+  // Authenticate with Azure if Service Principal credentials are provided
+  if (azureConfig) {
+    try {
+      execSync(
+        `az login --service-principal -u "${azureConfig.clientId}" -p "${azureConfig.clientSecret}" --tenant "${azureConfig.tenantId}" -o none`,
+        { timeout: 30_000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env: azureEnv },
+      );
+      execSync(
+        `az account set --subscription "${azureConfig.subscriptionId}"`,
+        { timeout: 15_000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env: azureEnv },
+      );
+    } catch (err: unknown) {
+      const execErr = err as { stderr?: string };
+      log.error({ error: execErr.stderr }, "Azure login failed during destroy");
+      return Response.json(
+        { error: `Azure authentication failed: ${execErr.stderr ?? "unknown error"}` },
+        { status: 401 },
+      );
+    }
+  }
 
   // Detect CLI
   let cli: string;
@@ -65,6 +88,7 @@ export async function POST(request: NextRequest) {
         timeout: 300_000,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
+        env: azureEnv,
       },
     );
     outputs.push(`${cli} destroy:\n${destroyOutput}`);
@@ -85,6 +109,7 @@ export async function POST(request: NextRequest) {
         timeout: 30_000,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
+        env: azureEnv,
       },
     );
     outputs.push(`Resource group '${resourceGroupName}' deletion initiated.`);

@@ -53,6 +53,10 @@ describe("getRequiredRole", () => {
     expect(getRequiredRole("/api/history/some-id")).toBe("VIEWER");
   });
 
+  it("returns CONVERTER for github scan route", () => {
+    expect(getRequiredRole("/api/github/scan")).toBe("CONVERTER");
+  });
+
   it("returns null for unknown routes", () => {
     expect(getRequiredRole("/api/auth/callback")).toBeNull();
     expect(getRequiredRole("/some/page")).toBeNull();
