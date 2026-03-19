@@ -53,6 +53,20 @@ export function formatCost(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }
 
+/** Format a token count for human display: 856, 12.5K, 1.2M */
+export function formatTokens(count: number): string {
+  if (count < 1_000) return count.toLocaleString();
+  if (count < 1_000_000) return `${(count / 1_000).toFixed(1)}K`;
+  return `${(count / 1_000_000).toFixed(1)}M`;
+}
+
+/** Human-readable model display name. */
+export function formatModel(model: string): string {
+  if (model.startsWith("claude-sonnet-4")) return "Claude Sonnet 4";
+  if (model.startsWith("claude-haiku-4")) return "Claude Haiku 4.5";
+  return model;
+}
+
 export function addCosts(a: CostInfo, b: CostInfo): CostInfo {
   return {
     inputTokens: a.inputTokens + b.inputTokens,

@@ -101,6 +101,8 @@ export function useConversion() {
                   bicepFileCount: Object.keys(s.bicepFiles).length,
                 }
               : {}),
+            // Token usage and cost
+            ...(costInfo ? { costInfo } : {}),
           };
           s.addHistoryEntry(entry);
 

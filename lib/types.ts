@@ -64,6 +64,8 @@ export interface ConversionHistoryEntry {
   entryPoint?: string;
   /** Number of Bicep files in the project (for display) */
   bicepFileCount?: number;
+  /** Token usage and cost info (added post-launch; absent on legacy entries) */
+  costInfo?: CostInfo;
 }
 
 /** A single message in the agent conversation log. */

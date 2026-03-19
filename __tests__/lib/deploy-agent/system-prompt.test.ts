@@ -16,15 +16,16 @@ describe("DEPLOY_SYSTEM_PROMPT", () => {
     expect(DEPLOY_SYSTEM_PROMPT).toContain("terraform_destroy");
   });
 
-  it("describes the 8-step deployment and testing workflow", () => {
+  it("describes the 9-step deployment and testing workflow", () => {
     expect(DEPLOY_SYSTEM_PROMPT).toContain("1. PLAN");
-    expect(DEPLOY_SYSTEM_PROMPT).toContain("2. APPLY");
-    expect(DEPLOY_SYSTEM_PROMPT).toContain("3. OUTPUTS");
-    expect(DEPLOY_SYSTEM_PROMPT).toContain("4. TEST - Resource Existence");
-    expect(DEPLOY_SYSTEM_PROMPT).toContain("5. TEST - Connectivity");
-    expect(DEPLOY_SYSTEM_PROMPT).toContain("6. TEST - Configuration");
-    expect(DEPLOY_SYSTEM_PROMPT).toContain("7. REPORT");
-    expect(DEPLOY_SYSTEM_PROMPT).toContain("8. STOP");
+    expect(DEPLOY_SYSTEM_PROMPT).toContain("2. PRE-FLIGHT CHECKS");
+    expect(DEPLOY_SYSTEM_PROMPT).toContain("3. APPLY");
+    expect(DEPLOY_SYSTEM_PROMPT).toContain("4. OUTPUTS");
+    expect(DEPLOY_SYSTEM_PROMPT).toContain("5. TEST - Resource Existence");
+    expect(DEPLOY_SYSTEM_PROMPT).toContain("6. TEST - Connectivity");
+    expect(DEPLOY_SYSTEM_PROMPT).toContain("7. TEST - Configuration");
+    expect(DEPLOY_SYSTEM_PROMPT).toContain("8. REPORT");
+    expect(DEPLOY_SYSTEM_PROMPT).toContain("9. STOP");
   });
 
   it("contains the NEVER destroy rule", () => {

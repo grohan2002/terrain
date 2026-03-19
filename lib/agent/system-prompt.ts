@@ -273,6 +273,51 @@ When validation fails:
 - Use consistent naming: snake_case for all identifiers
 - When generating terraform.tfvars, also generate a terraform.tfvars.example with placeholder values
 
+## Azure deployment readiness — CRITICAL
+
+Generated Terraform MUST deploy successfully without manual fixes. Follow these rules:
+
+### Globally unique resource names
+These Azure resources require GLOBALLY UNIQUE names. ALWAYS append a random suffix:
+- **Key Vault**: Use a random_string resource and interpolate: \`name = "kv-\${var.project}-\${random_string.suffix.result}"\`
+- **Storage Account**: \`name = "st\${var.project}\${random_string.suffix.result}"\` (3-24 chars, lowercase+numbers only)
+- **Container Registry**: \`name = "cr\${var.project}\${random_string.suffix.result}"\`
+- **App Service / Function App**: \`name = "\${var.project}-app-\${random_string.suffix.result}"\`
+- **SQL Server**: \`name = "\${var.project}-sql-\${random_string.suffix.result}"\`
+- **Cosmos DB**: \`name = "\${var.project}-cosmos-\${random_string.suffix.result}"\`
+
+Always include a random_string resource in main.tf:
+\`\`\`hcl
+resource "random_string" "suffix" {
+  length  = 6
+  special = false
+  upper   = false
+}
+\`\`\`
+And add "hashicorp/random" to required_providers in providers.tf.
+
+### Dynamic version lookups — never hardcode versions
+- **AKS Kubernetes version**: NEVER hardcode (e.g., "1.27.3"). Use the data source:
+  \`\`\`hcl
+  data "azurerm_kubernetes_service_versions" "current" {
+    location        = var.location
+    include_preview = false
+  }
+  \`\`\`
+  Then reference: \`kubernetes_version = data.azurerm_kubernetes_service_versions.current.latest_version\`
+- **VM image versions**: Use \`latest\` or a data source rather than pinned versions
+- **API versions**: The AzureRM provider handles API versions internally — do NOT specify them
+
+### Resource naming variables
+Always generate variables for resource naming with sensible defaults:
+\`\`\`hcl
+variable "project" {
+  type        = string
+  default     = "bicep"
+  description = "Project name prefix for resource naming"
+}
+\`\`\`
+
 ## Security best practices
 
 - NEVER hardcode secrets, passwords, connection strings, or API keys in generated Terraform

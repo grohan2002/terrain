@@ -13,10 +13,11 @@ import {
   Key,
   Rocket,
   Loader2,
+  RotateCcw,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useConversionStore } from "@/lib/store";
-import { formatCost } from "@/lib/cost";
+import { formatCost, formatTokens, formatModel } from "@/lib/cost";
 import { hasPermission } from "@/lib/rbac";
 import { useConversion } from "@/hooks/use-conversion";
 import { useDeployment } from "@/hooks/use-deployment";
@@ -117,6 +118,8 @@ export function ConversionPanel() {
   const isMultiFile = useConversionStore((s) => s.isMultiFile);
   const bicepFiles = useConversionStore((s) => s.bicepFiles);
   const entryPoint = useConversionStore((s) => s.entryPoint);
+  const resetConversion = useConversionStore((s) => s.resetConversion);
+  const fullReset = useConversionStore((s) => s.reset);
   const { startConversion, cancelConversion } = useConversion();
   const { startDeployment, destroyResources, keepResources, cancelDeployment } = useDeployment();
   const { data: session } = useSession();
@@ -368,9 +371,35 @@ export function ConversionPanel() {
             </Badge>
           )}
           {costInfo && (
-            <Badge variant="outline" className="text-muted-foreground font-mono text-[10px]">
-              {formatCost(costInfo.totalCostUsd)}
-            </Badge>
+            <Tooltip>
+              <TooltipTrigger className="inline-flex items-center rounded-md border border-border px-2.5 py-0.5 text-[10px] font-mono text-muted-foreground transition-colors hover:bg-accent cursor-default">
+                {formatCost(costInfo.totalCostUsd)}
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs space-y-1 p-3">
+                <p className="font-semibold">{formatModel(costInfo.model)}</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-muted-foreground">
+                  <span>Input tokens</span>
+                  <span className="text-right font-mono">{formatTokens(costInfo.inputTokens)}</span>
+                  <span>Output tokens</span>
+                  <span className="text-right font-mono">{formatTokens(costInfo.outputTokens)}</span>
+                  {costInfo.cacheReadTokens > 0 && (
+                    <>
+                      <span>Cache read</span>
+                      <span className="text-right font-mono">{formatTokens(costInfo.cacheReadTokens)}</span>
+                    </>
+                  )}
+                  {costInfo.cacheWriteTokens > 0 && (
+                    <>
+                      <span>Cache write</span>
+                      <span className="text-right font-mono">{formatTokens(costInfo.cacheWriteTokens)}</span>
+                    </>
+                  )}
+                </div>
+                <p className="pt-1 border-t border-border font-semibold">
+                  Total: {formatCost(costInfo.totalCostUsd)}
+                </p>
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -406,7 +435,7 @@ export function ConversionPanel() {
             </Button>
           )}
           {isConverting ? (
-            <Button variant="destructive" size="sm" onClick={() => setShowCancelDialog(true)}>
+            <Button variant="outline" size="sm" onClick={() => setShowCancelDialog(true)} className="border-amber-500/40 text-amber-600 hover:bg-amber-500/10 dark:text-amber-400">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               Stop Converting
             </Button>
@@ -438,9 +467,15 @@ export function ConversionPanel() {
             </Button>
           )}
           {isDeploying && (
-            <Button variant="destructive" size="sm" onClick={cancelDeployment}>
+            <Button variant="outline" size="sm" onClick={cancelDeployment} className="border-amber-500/40 text-amber-600 hover:bg-amber-500/10 dark:text-amber-400">
               <Square className="h-3.5 w-3.5" />
               Cancel Deploy
+            </Button>
+          )}
+          {(status === "done" || status === "error") && !isDeploying && (
+            <Button variant="outline" size="sm" onClick={fullReset}>
+              <RotateCcw className="h-3.5 w-3.5" />
+              New Conversion
             </Button>
           )}
         </div>

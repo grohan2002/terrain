@@ -13,6 +13,9 @@ import type {
   ToolUseBlock,
   TextBlock,
 } from "@anthropic-ai/sdk/resources/messages";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { bicepTools } from "./tools";
 import { createToolHandlers, type ToolHandlerCallbacks } from "./tool-handlers";
 import { SYSTEM_PROMPT, SYSTEM_PROMPT_MULTI_FILE } from "./system-prompt";
@@ -22,6 +25,23 @@ import { selectModel, selectModelMultiFile } from "../model-router";
 import { buildDependencyGraph, buildMultiFileUserMessage, summarizeContext } from "../bicep-modules";
 import { logger } from "../logger";
 import type { BicepFiles, StreamEvent, ToolCallInfo } from "../types";
+
+// ---------------------------------------------------------------------------
+// Isolated temp directory per conversion — prevents file accumulation
+// ---------------------------------------------------------------------------
+
+function createIsolatedOutputDir(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bicep-tf-"));
+  return dir;
+}
+
+function cleanupOutputDir(dir: string): void {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // Best-effort cleanup
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -163,10 +183,20 @@ export async function chatStream(
     totalCostUsd: 0, model,
   };
 
+  // Create an isolated temp directory for this conversion to prevent
+  // leftover files from previous runs being picked up by format_terraform
+  const outputDir = createIsolatedOutputDir();
+
+  // Accumulate terraform files across multiple write_terraform_files calls
+  // so a second call (e.g., just terraform.tfvars.example) doesn't replace
+  // the entire output from the first call
+  let accumulatedTerraformFiles: Record<string, string> = {};
+
   // Wire up callbacks so we can emit side-effects from tool handlers
   const handlerCallbacks: ToolHandlerCallbacks = {
     onTerraformOutput: (files) => {
-      emit({ type: "terraform_output", files });
+      accumulatedTerraformFiles = { ...accumulatedTerraformFiles, ...files };
+      emit({ type: "terraform_output", files: accumulatedTerraformFiles });
     },
     onValidation: (passed, output) => {
       emit({ type: "validation", passed, output });
@@ -174,7 +204,7 @@ export async function chatStream(
   };
   const handlers = createToolHandlers(handlerCallbacks);
 
-  // Build initial messages array
+  // Build initial messages array — tell Claude the exact output directory
   const messages: MessageParam[] = [
     {
       role: "user",
@@ -185,6 +215,7 @@ export async function chatStream(
             "Convert the following Azure Bicep template to Terraform/OpenTofu HCL. " +
             "The Bicep content is provided inline below — skip read_bicep_file and start with parse_bicep. " +
             "Batch your tool calls aggressively (all lookups in one turn, all generates in one turn).\n\n" +
+            `IMPORTANT: Use this output directory for ALL file operations (write_terraform_files, validate_terraform, format_terraform): ${outputDir}\n\n` +
             "```bicep\n" +
             bicepContent +
             "\n```",
@@ -195,6 +226,7 @@ export async function chatStream(
 
   let round = 0;
 
+  try {
   while (round < MAX_TOOL_ROUNDS) {
     round++;
 
@@ -357,6 +389,10 @@ export async function chatStream(
     costInfo: totalCost,
     model,
   });
+  } finally {
+    // Clean up isolated temp directory
+    cleanupOutputDir(outputDir);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -402,6 +438,9 @@ export async function chatStreamMultiFile(
     label: `Analyzing ${Object.keys(bicepFiles).length}-file project`,
   });
 
+  // Create an isolated temp directory for this conversion
+  const outputDir = createIsolatedOutputDir();
+
   // Accumulate full text and tool call info across rounds
   let fullReply = "";
   const allToolCalls: ToolCallInfo[] = [];
@@ -411,10 +450,14 @@ export async function chatStreamMultiFile(
     totalCostUsd: 0, model,
   };
 
+  // Accumulate terraform files across multiple write calls (same as single-file)
+  let accumulatedTerraformFiles: Record<string, string> = {};
+
   // Wire up callbacks with bicepFiles context for the read_bicep_file_content tool
   const handlerCallbacks: ToolHandlerCallbacks = {
     onTerraformOutput: (files) => {
-      emit({ type: "terraform_output", files });
+      accumulatedTerraformFiles = { ...accumulatedTerraformFiles, ...files };
+      emit({ type: "terraform_output", files: accumulatedTerraformFiles });
     },
     onValidation: (passed, output) => {
       emit({ type: "validation", passed, output });
@@ -425,16 +468,20 @@ export async function chatStreamMultiFile(
     bicepFilesContext: bicepFiles,
   });
 
-  // Build initial messages array
+  // Build initial messages array — inject output directory path
+  const userMessageWithDir = userMessage +
+    `\n\nIMPORTANT: Use this output directory for ALL file operations (write_terraform_files, validate_terraform, format_terraform): ${outputDir}`;
+
   const messages: MessageParam[] = [
     {
       role: "user",
-      content: [{ type: "text", text: userMessage }],
+      content: [{ type: "text", text: userMessageWithDir }],
     },
   ];
 
   let round = 0;
 
+  try {
   while (round < MAX_TOOL_ROUNDS_MULTI) {
     round++;
 
@@ -592,4 +639,8 @@ export async function chatStreamMultiFile(
     costInfo: totalCost,
     model,
   });
+  } finally {
+    // Clean up isolated temp directory
+    cleanupOutputDir(outputDir);
+  }
 }

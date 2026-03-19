@@ -1,10 +1,12 @@
 "use client";
 
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { History, FileCode, FolderOpen, Rocket } from "lucide-react";
+import { History, FileCode, FolderOpen, Rocket, Coins, Hash, Layers } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useConversionStore } from "@/lib/store";
 import { hasPermission } from "@/lib/rbac";
+import { formatCost, formatTokens } from "@/lib/cost";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -27,6 +29,19 @@ export default function HistoryPage() {
   const userRole = session?.user?.role ?? "CONVERTER";
   const canDeploy = hasPermission(userRole, "DEPLOYER");
   const router = useRouter();
+
+  // Aggregate usage stats (useMemo to avoid new-ref loops with React 19)
+  const stats = useMemo(() => {
+    let totalTokens = 0;
+    let totalCost = 0;
+    for (const entry of history) {
+      if (entry.costInfo) {
+        totalTokens += entry.costInfo.inputTokens + entry.costInfo.outputTokens;
+        totalCost += entry.costInfo.totalCostUsd;
+      }
+    }
+    return { totalConversions: history.length, totalTokens, totalCost };
+  }, [history]);
 
   const handleLoad = (entry: (typeof history)[0]) => {
     // Restore multi-file context if available
@@ -73,6 +88,37 @@ export default function HistoryPage() {
         </p>
       </div>
 
+      {/* Usage summary cards */}
+      {history.length > 0 && (
+        <div className="grid grid-cols-3 gap-4">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium">
+              <Layers className="h-3.5 w-3.5" />
+              Total Conversions
+            </div>
+            <p className="mt-1 text-2xl font-bold tracking-tight">{stats.totalConversions}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium">
+              <Hash className="h-3.5 w-3.5" />
+              Total Tokens
+            </div>
+            <p className="mt-1 text-2xl font-bold tracking-tight font-mono">
+              {stats.totalTokens > 0 ? formatTokens(stats.totalTokens) : "—"}
+            </p>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium">
+              <Coins className="h-3.5 w-3.5" />
+              Total Spent
+            </div>
+            <p className="mt-1 text-2xl font-bold tracking-tight font-mono">
+              {stats.totalCost > 0 ? formatCost(stats.totalCost) : "—"}
+            </p>
+          </div>
+        </div>
+      )}
+
       {history.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-border py-16">
           <div className="rounded-full bg-muted p-4">
@@ -93,6 +139,8 @@ export default function HistoryPage() {
                 <TableHead className="px-4">File</TableHead>
                 <TableHead className="px-4">Date</TableHead>
                 <TableHead className="px-4">Resources</TableHead>
+                <TableHead className="px-4">Tokens</TableHead>
+                <TableHead className="px-4">Cost</TableHead>
                 <TableHead className="px-4">Validation</TableHead>
                 <TableHead className="px-4 text-right">Actions</TableHead>
               </TableRow>
@@ -119,6 +167,16 @@ export default function HistoryPage() {
                   </TableCell>
                   <TableCell className="px-4 text-muted-foreground">
                     {entry.resourcesConverted}
+                  </TableCell>
+                  <TableCell className="px-4 font-mono text-xs text-muted-foreground">
+                    {entry.costInfo
+                      ? formatTokens(entry.costInfo.inputTokens + entry.costInfo.outputTokens)
+                      : "—"}
+                  </TableCell>
+                  <TableCell className="px-4 font-mono text-xs text-muted-foreground">
+                    {entry.costInfo
+                      ? formatCost(entry.costInfo.totalCostUsd)
+                      : "—"}
                   </TableCell>
                   <TableCell className="px-4">
                     <Badge
