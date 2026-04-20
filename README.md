@@ -78,7 +78,7 @@ ANTHROPIC_API_KEY=sk-ant-...          # Your Anthropic API key
 # Generate with: openssl rand -base64 32
 AUTH_SECRET=<paste-generated-secret>
 AUTH_TRUST_HOST=true
-AUTH_URL=http://localhost:3000
+AUTH_URL=http://localhost:3001
 
 # GitHub OAuth (optional — credentials login works without these)
 AUTH_GITHUB_ID=
@@ -115,11 +115,13 @@ docker compose up --build -d
 
 This starts three services:
 
-| Service | Port | Description |
-|---------|------|-------------|
-| **app** | 3000 | Bicep UI (Next.js standalone + OpenTofu + Azure CLI + Trivy) |
-| **postgres** | 5432 | PostgreSQL 16 with persistent volume |
-| **redis** | 6379 | Redis 7 with persistent volume |
+| Service | Host → Container | Description |
+|---------|------------------|-------------|
+| **app** | 3001 → 3000 | Bicep UI (Next.js standalone + OpenTofu + Azure CLI + Infracost + OPA + Trivy) |
+| **postgres** | 5432 → 5432 | PostgreSQL 16 with persistent volume |
+| **redis** | 6380 → 6379 | Redis 7 with persistent volume |
+
+> The app is mapped to host port **3001** (and redis to **6380**) to avoid collisions with other local Next.js projects that typically use 3000/6379. Internally, containers still talk to each other on their standard ports via the Docker network.
 
 Wait for all containers to be healthy:
 
@@ -181,7 +183,7 @@ Expected output:
 
 ### Step 9: Open the app
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3001](http://localhost:3001) in your browser.
 
 **Default login credentials:**
 - **Email:** `admin@bicep.dev`
@@ -227,7 +229,7 @@ npx prisma generate
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3001](http://localhost:3001).
 
 > **Note:** Local dev mode requires OpenTofu or Terraform to be installed for validation. The Docker image bundles these automatically. Install with: `brew install opentofu`
 
@@ -306,7 +308,7 @@ docker compose up --build -d
 | `GET` | `/api/check-key` | Validate Anthropic API key |
 | `GET` | `/api/docs` | OpenAPI / Swagger spec |
 
-Interactive API docs are available at [http://localhost:3000/api-docs](http://localhost:3000/api-docs).
+Interactive API docs are available at [http://localhost:3001/api-docs](http://localhost:3001/api-docs).
 
 ---
 
@@ -466,6 +468,30 @@ npx vitest run __tests__/lib/github.test.ts
 
 ---
 
+## Analysis Panels (Cost, Policy, Security)
+
+The three analysis tabs under a completed conversion use the following tools, all bundled in the Docker image:
+
+| Panel | Tool | Fallback when tool is unavailable |
+|-------|------|-----------------------------------|
+| **Cost Estimate** | [Infracost](https://www.infracost.io) | Resource-type lookup map with rough monthly estimates |
+| **Policies** | [Open Policy Agent (OPA)](https://www.openpolicyagent.org) | Built-in regex checks on encryption, tagging, public access |
+| **Security Scan** | [Trivy](https://aquasecurity.github.io/trivy) | Regex scan for TLS, HTTPS, open NSG rules, etc. |
+
+Each panel header shows a badge indicating whether the real tool ran (green) or the fallback (amber). If you see **"Fallback estimate"**, **"Fallback checks"**, or **"Fallback scan"** badges, the real binary isn't on `PATH` inside the container.
+
+### Unlocking real-time Azure pricing (optional)
+
+Infracost works without an account using a local pricing file, but for up-to-date cloud pricing you can authenticate:
+
+```bash
+docker exec -it bicep-ui-app-1 infracost auth login
+```
+
+Follow the browser prompt. The resulting API token is cached in `/home/nextjs/.config/infracost/credentials.yml` inside the container (persisted because `/home/nextjs` is part of the container's user directory; rebuild or re-run if you lose it).
+
+---
+
 ## Troubleshooting
 
 | Issue | Fix |
@@ -475,4 +501,7 @@ npx vitest run __tests__/lib/github.test.ts
 | Stale Next.js cache causing runtime errors | Run `rm -rf .next` then rebuild |
 | Zustand infinite rerender loop | Check store selectors — never return new refs (use `useMemo` inside component) |
 | `tofu` / `terraform` not found (local dev) | Install OpenTofu: `brew install opentofu` or use Docker which bundles it |
-| Conversion shows only `.tfvars.example` | Fixed in latest — terraform outputs are now accumulated across writes |
+| Conversion shows only `.tfvars.example` | Fixed — terraform outputs are now accumulated across `write_terraform_files` calls |
+| Cost panel shows `$0` or "Fallback estimate" | Rebuild the Docker image so Infracost is installed, or run `which infracost` inside the container |
+| Policy panel shows "Fallback checks" | Rebuild the Docker image so OPA is installed, or run `which opa` inside the container |
+| Security panel shows "Fallback scan" | Rebuild the Docker image so Trivy is installed, or run `which trivy` inside the container |

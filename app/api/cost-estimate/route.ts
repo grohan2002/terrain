@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
         resources,
         currency: "USD",
         estimatedAt: new Date().toISOString(),
+        infracostUsed: true,
       };
     } catch (e) {
       log.warn({ error: (e as Error).message }, "Infracost failed, using fallback");
@@ -186,10 +187,26 @@ const RESOURCE_COSTS: Record<string, { monthly: number; label: string }> = {
   azurerm_eventgrid_topic: { monthly: 0, label: "Event Grid (pay-per-op)" },
   azurerm_signalr_service: { monthly: 48.58, label: "SignalR (Standard)" },
 
+  // Additional compute / databases
+  azurerm_mssql_elasticpool: { monthly: 73, label: "SQL Elastic Pool (eDTU 50)" },
+  azurerm_postgresql_server: { monthly: 25, label: "PostgreSQL Single (B_Gen5_1)" },
+  azurerm_mysql_server: { monthly: 25, label: "MySQL Single (B_Gen5_1)" },
+  azurerm_mariadb_server: { monthly: 25, label: "MariaDB (B_Gen5_1)" },
+  azurerm_databricks_workspace: { monthly: 0, label: "Databricks Workspace (free tier)" },
+  azurerm_synapse_workspace: { monthly: 0, label: "Synapse Workspace (pay-per-use)" },
+  azurerm_data_factory: { monthly: 0, label: "Data Factory (pay-per-use)" },
+  azurerm_logic_app_workflow: { monthly: 0, label: "Logic App (Consumption)" },
+
+  // Role & identity (free)
+  azurerm_role_definition: { monthly: 0, label: "Role Definition (free)" },
+  azurerm_federated_identity_credential: { monthly: 0, label: "Federated Identity (free)" },
+
   // Misc
   random_string: { monthly: 0, label: "Random String (local)" },
   random_password: { monthly: 0, label: "Random Password (local)" },
   random_id: { monthly: 0, label: "Random ID (local)" },
+  random_uuid: { monthly: 0, label: "Random UUID (local)" },
+  time_sleep: { monthly: 0, label: "Time Sleep (local)" },
 };
 
 function estimateFallback(files: Record<string, string>): CostEstimateResult {
@@ -222,5 +239,6 @@ function estimateFallback(files: Record<string, string>): CostEstimateResult {
     resources,
     currency: "USD",
     estimatedAt: new Date().toISOString(),
+    infracostUsed: false,
   };
 }

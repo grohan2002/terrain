@@ -130,6 +130,7 @@ export async function POST(request: NextRequest) {
       findings,
       scannedAt: new Date().toISOString(),
       scanner: trivyAvailable ? "trivy" : "built-in",
+      trivyUsed: trivyAvailable,
     };
 
     log.info({ findingCount: findings.length, scanner: scanResult.scanner }, "Scan completed");

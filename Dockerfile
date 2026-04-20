@@ -24,6 +24,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl -sL https://aka.ms/InstallAzureCLIDeb | bash && \
     # -- Trivy --
     curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin && \
+    # -- OPA (Open Policy Agent) --
+    curl -sfL "https://openpolicyagent.org/downloads/latest/opa_linux_$(dpkg --print-architecture)" -o /usr/local/bin/opa && \
+    chmod +x /usr/local/bin/opa && \
+    # -- Infracost --
+    curl -sfL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh -s -- -b /usr/local/bin && \
     # -- Cleanup --
     apt-get purge -y gnupg lsb-release unzip && \
     apt-get autoremove -y && rm -rf /var/lib/apt/lists/*

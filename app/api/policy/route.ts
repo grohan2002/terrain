@@ -99,6 +99,7 @@ export async function POST(request: NextRequest) {
     passed: violations.filter((v) => v.severity === "error").length === 0,
     violations,
     evaluatedAt: new Date().toISOString(),
+    opaUsed: opaAvailable,
   };
 
   log.info({ violationCount: violations.length, opaAvailable }, "Policy evaluation completed");

@@ -87,7 +87,7 @@ export function SecurityPanel() {
     );
   }
 
-  const { findings, passed, scanner } = scanResult!;
+  const { findings, passed, scanner, trivyUsed } = scanResult!;
   const grouped = groupBySeverity(findings);
 
   return (
@@ -102,7 +102,16 @@ export function SecurityPanel() {
           <span className="text-xs font-medium">
             {findings.length === 0 ? "No issues found" : `${findings.length} finding(s)`}
           </span>
-          <Badge variant="outline" className="text-[10px]">
+          {trivyUsed ? (
+            <Badge variant="outline" className="text-[10px] border-green-500/30 text-green-600 dark:text-green-400">
+              Trivy
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-600 dark:text-amber-400" title="Trivy not available — using built-in regex checks">
+              Fallback scan
+            </Badge>
+          )}
+          <Badge variant="outline" className="text-[10px] text-muted-foreground">
             {scanner}
           </Badge>
         </div>

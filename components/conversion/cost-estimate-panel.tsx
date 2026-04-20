@@ -80,7 +80,7 @@ export function CostEstimatePanel() {
     );
   }
 
-  const { resources, totalMonthlyCost, currency } = result!;
+  const { resources, totalMonthlyCost, currency, infracostUsed } = result!;
 
   return (
     <div className="flex h-full flex-col">
@@ -93,6 +93,15 @@ export function CostEstimatePanel() {
           <Badge variant="outline" className="text-[10px] text-muted-foreground">
             {resources.length} resource(s)
           </Badge>
+          {infracostUsed ? (
+            <Badge variant="outline" className="text-[10px] border-green-500/30 text-green-600 dark:text-green-400">
+              Infracost
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-600 dark:text-amber-400" title="Infracost not available — showing rough fallback estimate">
+              Fallback estimate
+            </Badge>
+          )}
         </div>
         <Button size="sm" variant="ghost" onClick={estimate} className="h-6 text-xs">
           Re-estimate

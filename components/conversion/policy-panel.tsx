@@ -86,7 +86,7 @@ export function PolicyPanel() {
     );
   }
 
-  const { violations, passed } = result!;
+  const { violations, passed, opaUsed } = result!;
   const grouped = groupByPolicy(violations);
 
   return (
@@ -101,6 +101,15 @@ export function PolicyPanel() {
           <span className="text-xs font-medium">
             {violations.length === 0 ? "All policies passed" : `${violations.length} violation(s)`}
           </span>
+          {opaUsed ? (
+            <Badge variant="outline" className="text-[10px] border-green-500/30 text-green-600 dark:text-green-400">
+              OPA
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-600 dark:text-amber-400" title="OPA not available — using built-in regex checks">
+              Fallback checks
+            </Badge>
+          )}
         </div>
         <Button size="sm" variant="ghost" onClick={evaluate} className="h-6 text-xs">
           Re-evaluate

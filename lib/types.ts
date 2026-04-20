@@ -182,6 +182,8 @@ export interface ScanResult {
   findings: ScanFinding[];
   scannedAt: string;
   scanner: string;
+  /** Whether the real Trivy binary ran (true) or the built-in regex fallback was used (false). */
+  trivyUsed?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +204,8 @@ export interface PolicyResult {
   passed: boolean;
   violations: PolicyViolation[];
   evaluatedAt: string;
+  /** Whether the real OPA binary ran (true) or the built-in regex fallback was used (false). */
+  opaUsed?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +228,8 @@ export interface CostEstimateResult {
   resources: ResourceCostEstimate[];
   currency: string;
   estimatedAt: string;
+  /** Whether Infracost ran (true) or the built-in fallback map was used (false). */
+  infracostUsed?: boolean;
 }
 
 // ---------------------------------------------------------------------------

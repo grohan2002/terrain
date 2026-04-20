@@ -1,8 +1,11 @@
 services:
   app:
     build: .
+    # Host port 3001 (container still 3000). Port 3000 is a very common default
+    # for other Next.js projects; mapping to 3001 avoids conflicts when running
+    # multiple local dev stacks side-by-side.
     ports:
-      - "3000:3000"
+      - "3001:3000"
     env_file: .env
     environment:
       DATABASE_URL: postgresql://bicepui:bicepui@postgres:5432/bicepui
@@ -31,8 +34,11 @@ services:
 
   redis:
     image: redis:7-alpine
+    # Host port 6380 (container still 6379) to avoid conflicts with other local
+    # projects that may already be using 6379. The app connects to redis via the
+    # internal Docker network (redis:6379), so this only affects host access.
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis-data:/data
 
