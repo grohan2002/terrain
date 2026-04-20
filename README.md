@@ -480,15 +480,22 @@ The three analysis tabs under a completed conversion use the following tools, al
 
 Each panel header shows a badge indicating whether the real tool ran (green) or the fallback (amber). If you see **"Fallback estimate"**, **"Fallback checks"**, or **"Fallback scan"** badges, the real binary isn't on `PATH` inside the container.
 
-### Unlocking real-time Azure pricing (optional)
+### Unlocking real-time Azure pricing (recommended)
 
-Infracost works without an account using a local pricing file, but for up-to-date cloud pricing you can authenticate:
+The CLI requires an API key to reach Infracost's pricing service. The simplest way to wire it into the container:
 
-```bash
-docker exec -it bicep-ui-app-1 infracost auth login
-```
+1. Grab a free key from [https://dashboard.infracost.io](https://dashboard.infracost.io) (Settings → API Key).
+2. Add it to your `.env` file:
+   ```env
+   INFRACOST_API_KEY=ico-...
+   ```
+3. Restart the app container so the env var is picked up:
+   ```bash
+   docker compose up -d --force-recreate app
+   ```
+4. Re-run the cost estimate — the panel header should flip from the amber **"Fallback estimate"** badge to the green **"Infracost"** badge.
 
-Follow the browser prompt. The resulting API token is cached in `/home/nextjs/.config/infracost/credentials.yml` inside the container (persisted because `/home/nextjs` is part of the container's user directory; rebuild or re-run if you lose it).
+Alternatively, `docker exec -it bicep-ui-app-1 infracost auth login` walks you through an interactive browser flow and writes credentials to `/home/nextjs/.config/infracost/credentials.yml` inside the container (lost on rebuild unless you mount the directory as a volume).
 
 ---
 
