@@ -20,6 +20,7 @@ import { bicepTools } from "./tools";
 import { createToolHandlers, type ToolHandlerCallbacks } from "./tool-handlers";
 import { SYSTEM_PROMPT, SYSTEM_PROMPT_MULTI_FILE } from "./system-prompt";
 import { withRetry } from "../retry";
+import { getTerraformMcpTools, isTerraformMcpTool, callMcpTool } from "../mcp/clients";
 import { calculateCost, addCosts, type CostInfo } from "../cost";
 import { selectModel, selectModelMultiFile } from "../model-router";
 import { buildDependencyGraph, buildMultiFileUserMessage, summarizeContext } from "../bicep-modules";
@@ -204,6 +205,11 @@ export async function chatStream(
   };
   const handlers = createToolHandlers(handlerCallbacks);
 
+  // Load Terraform MCP tools (HashiCorp official) so Claude can query real
+  // provider schemas instead of hallucinating. Falls back to [] on any error.
+  const mcpTools = await getTerraformMcpTools();
+  const toolsForClaude = [...bicepTools, ...mcpTools];
+
   // Build initial messages array — tell Claude the exact output directory
   const messages: MessageParam[] = [
     {
@@ -256,7 +262,7 @@ export async function chatStream(
           model,
           max_tokens: MAX_TOKENS,
           system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-          tools: bicepTools,
+          tools: toolsForClaude,
           messages: messagesToSend,
         }),
       ),
@@ -334,15 +340,12 @@ export async function chatStream(
         label: getToolLabel(toolUse.name),
       });
 
-      // Dispatch to handler
+      // Dispatch to handler — local first, then Terraform MCP fallback
       const handler = handlers[toolUse.name];
       let resultText: string;
       let isError = false;
 
-      if (!handler) {
-        resultText = `Error: Unknown tool '${toolUse.name}'`;
-        isError = true;
-      } else {
+      if (handler) {
         try {
           const result = await handler(toolInput);
           isError = !result.ok;
@@ -352,6 +355,13 @@ export async function chatStream(
           resultText = `Error: Tool execution failed: ${msg}`;
           isError = true;
         }
+      } else if (isTerraformMcpTool(toolUse.name)) {
+        const result = await callMcpTool(toolUse.name, toolInput);
+        isError = !result.ok;
+        resultText = result.ok ? result.data : result.error;
+      } else {
+        resultText = `Error: Unknown tool '${toolUse.name}'`;
+        isError = true;
       }
 
       emit({
@@ -468,6 +478,10 @@ export async function chatStreamMultiFile(
     bicepFilesContext: bicepFiles,
   });
 
+  // Load Terraform MCP tools for authoritative provider schemas
+  const mcpTools = await getTerraformMcpTools();
+  const toolsForClaude = [...bicepTools, ...mcpTools];
+
   // Build initial messages array — inject output directory path
   const userMessageWithDir = userMessage +
     `\n\nIMPORTANT: Use this output directory for ALL file operations (write_terraform_files, validate_terraform, format_terraform): ${outputDir}`;
@@ -509,7 +523,7 @@ export async function chatStreamMultiFile(
           model,
           max_tokens: MAX_TOKENS_MULTI,
           system: [{ type: "text", text: SYSTEM_PROMPT_MULTI_FILE, cache_control: { type: "ephemeral" } }],
-          tools: bicepTools,
+          tools: toolsForClaude,
           messages: messagesToSend,
         }),
       ),
@@ -594,10 +608,7 @@ export async function chatStreamMultiFile(
       let resultText: string;
       let isError = false;
 
-      if (!handler) {
-        resultText = `Error: Unknown tool '${toolUse.name}'`;
-        isError = true;
-      } else {
+      if (handler) {
         try {
           const result = await handler(toolInput);
           isError = !result.ok;
@@ -607,6 +618,13 @@ export async function chatStreamMultiFile(
           resultText = `Error: Tool execution failed: ${msg}`;
           isError = true;
         }
+      } else if (isTerraformMcpTool(toolUse.name)) {
+        const result = await callMcpTool(toolUse.name, toolInput);
+        isError = !result.ok;
+        resultText = result.ok ? result.data : result.error;
+      } else {
+        resultText = `Error: Unknown tool '${toolUse.name}'`;
+        isError = true;
       }
 
       emit({ type: "tool_result", toolName: toolUse.name, isError });

@@ -20,6 +20,10 @@ best practices.
 - format_terraform: Run tofu fmt / terraform fmt to auto-format HCL files
 - list_bicep_files: List .bicep files in a directory
 
+**Official HashiCorp Terraform MCP tools (ground-truth provider data):**
+- search_providers / get_provider_details / get_latest_provider_version: Look up the REAL AzureRM provider schema and supported resource arguments. Use get_provider_details whenever you are unsure about a resource's properties — prefer the authoritative registry over recalling from memory. This is the fastest way to avoid invalid attribute names.
+- search_modules / get_module_details: Discover official Terraform modules you can reuse.
+
 ## Conversion workflow
 
 Follow these steps for EVERY conversion:

@@ -32,6 +32,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # -- Cleanup --
     apt-get purge -y gnupg lsb-release unzip && \
     apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
+# Install Azure MCP server globally (stdio transport). Claude spawns this as a
+# child process from lib/mcp/clients.ts for live Azure resource lookups.
+RUN npm install -g @azure/mcp
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 --home /home/nextjs nextjs && \
     mkdir -p /home/nextjs/.azure && chown -R nextjs:nodejs /home/nextjs

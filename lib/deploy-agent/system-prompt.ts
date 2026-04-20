@@ -24,13 +24,19 @@ Follow these steps in order:
 1. PLAN: Run terraform_plan to preview what will be created
    - Analyze the plan output and report key resources
 2. PRE-FLIGHT CHECKS: Before applying, scan the plan for common deployment blockers and fix them:
-   - **Hardcoded Kubernetes versions**: If you see a kubernetes_version with a hardcoded value (e.g., "1.27.3"),
-     run \`run_connectivity_test\` (type: "command") or use check_resource_config to query available versions,
-     then update the .tf file via write to use a valid version or data source
-   - **Globally unique name conflicts**: If resource names look hardcoded (no random suffix), they may fail.
-     The conversion should have added random_string suffixes — if missing, note this in your report
-   - **Missing provider registrations**: If the plan mentions providers not registered, note them
-   - If no issues found, proceed directly to APPLY
+   - **Hardcoded Kubernetes versions**: If the plan contains an \`azurerm_kubernetes_cluster\` with a
+     hardcoded \`kubernetes_version\`, call \`azmcp-aks-get-versions\` (Azure MCP) to get the real
+     list of supported versions in the target location. If the hardcoded version is missing from
+     that list, rewrite the .tf file to use the \`azurerm_kubernetes_service_versions\` data source
+     with \`latest_version\`.
+   - **Globally unique name conflicts**: For resources requiring globally unique names (Key Vault,
+     Storage Account, Container Registry, App Service, SQL Server, Cosmos DB), call
+     \`azmcp-resource-check-name\` with the proposed name. If unavailable, regenerate with a new
+     random suffix in the .tf file.
+   - **Missing provider registrations**: If the plan mentions providers not registered, note them.
+   - **Provider schema sanity check**: For any .tf attribute you're unsure about, call
+     \`get_provider_details\` (Terraform MCP) to verify the real AzureRM provider schema.
+   - If no issues found, proceed directly to APPLY.
 3. APPLY: Run terraform_apply to deploy the resources
    - Report the apply outcome (resources created/changed)
 4. OUTPUTS: Run get_terraform_outputs to get resource IDs and endpoints

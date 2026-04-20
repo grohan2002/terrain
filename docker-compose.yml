@@ -15,6 +15,20 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      terraform-mcp:
+        condition: service_started
+
+  # HashiCorp official Terraform MCP server — gives Claude access to real
+  # provider schemas and module registry lookups. No host port mapping; the
+  # app reaches it via the internal network at http://terraform-mcp:8080/mcp
+  terraform-mcp:
+    image: hashicorp/terraform-mcp-server:0.5.1
+    environment:
+      TRANSPORT_MODE: streamable-http
+      TRANSPORT_HOST: 0.0.0.0
+      TRANSPORT_PORT: "8080"
+    command: ["--toolsets=registry"]
+    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine

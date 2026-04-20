@@ -117,7 +117,8 @@ This starts three services:
 
 | Service | Host → Container | Description |
 |---------|------------------|-------------|
-| **app** | 3001 → 3000 | Bicep UI (Next.js standalone + OpenTofu + Azure CLI + Infracost + OPA + Trivy) |
+| **app** | 3001 → 3000 | Bicep UI (Next.js + OpenTofu + Azure CLI + Infracost + OPA + Trivy + @azure/mcp) |
+| **terraform-mcp** | _(internal)_ → 8080 | HashiCorp Terraform MCP server (streamable-HTTP) |
 | **postgres** | 5432 → 5432 | PostgreSQL 16 with persistent volume |
 | **redis** | 6380 → 6379 | Redis 7 with persistent volume |
 
@@ -499,6 +500,33 @@ Alternatively, `docker exec -it bicep-ui-app-1 infracost auth login` walks you t
 
 ---
 
+## MCP Servers (Model Context Protocol)
+
+To reduce hallucination, the agents have access to two official MCP servers that provide authoritative data at runtime:
+
+| MCP server | Runs as | Tools exposed (allowlisted) | Used by |
+|-----------|---------|-----------------------------|---------|
+| **HashiCorp Terraform MCP** ([`hashicorp/terraform-mcp-server`](https://github.com/hashicorp/terraform-mcp-server)) | Sidecar container on `http://terraform-mcp:8080/mcp` | `search_providers`, `get_provider_details`, `get_latest_provider_version`, `search_modules`, `get_module_details` | Conversion & deploy agents (for AzureRM schema lookups) |
+| **Microsoft Azure MCP** ([`@azure/mcp`](https://github.com/microsoft/mcp/tree/main/servers/Azure.Mcp.Server)) | Child process inside the app container (stdio, `azmcp server start`) | `azmcp-aks-get-versions`, `azmcp-resource-check-name`, `azmcp-group-list`, `azmcp-subscription-list`, `azmcp-resource-show`, `azmcp-location-list` | Deploy agent only (live pre-flight checks) |
+
+**Why these are valuable**
+
+- Terraform MCP prevents Claude from inventing `azurerm_*` properties — it calls `get_provider_details` to fetch the real schema before writing HCL.
+- Azure MCP prevents common deployment failures: AKS unsupported-version errors (queries `azmcp-aks-get-versions` live) and Key Vault / Storage name-conflict errors (checks `azmcp-resource-check-name` before apply).
+
+**Kill switches** — in `.env`, set either flag to `false` to disable:
+```env
+ENABLE_TERRAFORM_MCP=true
+ENABLE_AZURE_MCP=true
+TERRAFORM_MCP_URL=http://terraform-mcp:8080/mcp   # only needed if sidecar moves
+```
+
+With either server disabled, the agents degrade gracefully — they'll fall back to their built-in `lookup_resource_mapping` tool and Claude's internal knowledge.
+
+**Azure MCP auth**: reuses the same `ARM_SUBSCRIPTION_ID` / `ARM_TENANT_ID` / `ARM_CLIENT_ID` / `ARM_CLIENT_SECRET` env vars as Terraform (the app maps `ARM_*` to `AZURE_*` before spawning the child process). Dialog-provided Azure creds reach `tofu apply` but not the Azure MCP pre-flight tools yet — see the `.env` file for the setting to bake in long-lived creds.
+
+---
+
 ## Troubleshooting
 
 | Issue | Fix |
@@ -512,3 +540,5 @@ Alternatively, `docker exec -it bicep-ui-app-1 infracost auth login` walks you t
 | Cost panel shows `$0` or "Fallback estimate" | Rebuild the Docker image so Infracost is installed, or run `which infracost` inside the container |
 | Policy panel shows "Fallback checks" | Rebuild the Docker image so OPA is installed, or run `which opa` inside the container |
 | Security panel shows "Fallback scan" | Rebuild the Docker image so Trivy is installed, or run `which trivy` inside the container |
+| Conversion hallucinates Terraform attributes | Confirm `terraform-mcp` container is healthy: `docker compose logs terraform-mcp`. Check the app logs for "Terraform MCP tools loaded" on startup. Set `ENABLE_TERRAFORM_MCP=false` as a kill switch. |
+| Azure MCP fails to spawn | Confirm `which azmcp` resolves inside the app container. Check Azure MCP logs via `docker compose logs app | grep azmcp`. If the `ARM_*` creds are missing or invalid, Azure MCP still starts but tool calls fail — set `ENABLE_AZURE_MCP=false` to silence. |

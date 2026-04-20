@@ -30,6 +30,14 @@ const envSchema = z.object({
   // Redis (caching)
   REDIS_URL: z.string().optional(),
 
+  // Infracost (optional — unlocks real-time Azure pricing)
+  INFRACOST_API_KEY: z.string().optional(),
+
+  // MCP (Model Context Protocol) — kill switches for official MCP integrations
+  ENABLE_TERRAFORM_MCP: z.string().optional(),
+  ENABLE_AZURE_MCP: z.string().optional(),
+  TERRAFORM_MCP_URL: z.string().url().optional(),
+
   // Logging
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])

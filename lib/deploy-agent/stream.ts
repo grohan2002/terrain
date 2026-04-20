@@ -17,6 +17,13 @@ import { createDeployToolHandlers, type DeployToolCallbacks } from "./tool-handl
 import { DEPLOY_SYSTEM_PROMPT } from "./system-prompt";
 import { withRetry } from "../retry";
 import { calculateCost, addCosts, type CostInfo } from "../cost";
+import {
+  getTerraformMcpTools,
+  getAzureMcpTools,
+  isTerraformMcpTool,
+  isAzureMcpTool,
+  callMcpTool,
+} from "../mcp/clients";
 import type { AzureConfig, DeployStreamEvent, ToolCallInfo, DeploySummary } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -88,6 +95,15 @@ export async function deployStream(
   };
   const handlers = createDeployToolHandlers(handlerCallbacks, azureConfig);
 
+  // Load MCP tools: Terraform MCP (provider schema lookups) and Azure MCP
+  // (live Azure queries for pre-flight checks like AKS versions and name
+  // availability). Each call degrades to [] on any connection error.
+  const [tfMcpTools, azMcpTools] = await Promise.all([
+    getTerraformMcpTools(),
+    getAzureMcpTools(),
+  ]);
+  const toolsForClaude = [...deployTools, ...tfMcpTools, ...azMcpTools];
+
   // Build the terraform files summary for context
   const filesSummary = Object.entries(terraformFiles)
     .map(([name, content]) => `--- ${name} ---\n${content}`)
@@ -135,7 +151,7 @@ export async function deployStream(
           model: MODEL,
           max_tokens: MAX_TOKENS,
           system: [{ type: "text", text: DEPLOY_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-          tools: deployTools,
+          tools: toolsForClaude,
           messages,
         }),
       ),
@@ -222,10 +238,7 @@ export async function deployStream(
       let resultText: string;
       let isError = false;
 
-      if (!handler) {
-        resultText = `Error: Unknown tool '${toolUse.name}'`;
-        isError = true;
-      } else {
+      if (handler) {
         try {
           const result = await handler(toolInput);
           isError = !result.ok;
@@ -235,6 +248,13 @@ export async function deployStream(
           resultText = `Error: Tool execution failed: ${msg}`;
           isError = true;
         }
+      } else if (isTerraformMcpTool(toolUse.name) || isAzureMcpTool(toolUse.name)) {
+        const result = await callMcpTool(toolUse.name, toolInput);
+        isError = !result.ok;
+        resultText = result.ok ? result.data : result.error;
+      } else {
+        resultText = `Error: Unknown tool '${toolUse.name}'`;
+        isError = true;
       }
 
       emit({
