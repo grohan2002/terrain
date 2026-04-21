@@ -8,7 +8,7 @@ services:
       - "3001:3000"
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://bicepui:bicepui@postgres:5432/bicepui
+      DATABASE_URL: postgresql://terrain:terrain@postgres:5432/terrain
       REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
@@ -35,13 +35,13 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: bicepui
-      POSTGRES_PASSWORD: bicepui
-      POSTGRES_DB: bicepui
+      POSTGRES_USER: terrain
+      POSTGRES_PASSWORD: terrain
+      POSTGRES_DB: terrain
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bicepui"]
+      test: ["CMD-SHELL", "pg_isready -U terrain"]
       interval: 5s
       timeout: 5s
       retries: 5

@@ -65,7 +65,7 @@ export function AppSidebar() {
         {/* Logo */}
         <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
           <ArrowLeftRight className="h-5 w-5 text-cta" />
-          <span className="font-semibold text-sm text-sidebar-foreground">Bicep Converter</span>
+          <span className="font-semibold text-sm text-sidebar-foreground">Terrain</span>
         </div>
 
         {/* Navigation */}

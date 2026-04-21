@@ -489,7 +489,11 @@ export function ConversionPanel() {
                 Convert
               </TooltipTrigger>
               <TooltipContent side="bottom" className="flex items-center gap-2">
-                <span>Convert Bicep to Terraform</span>
+                <span>
+                  {sourceFormat === "cloudformation"
+                    ? "Convert CloudFormation to Terraform"
+                    : "Convert Bicep to Terraform"}
+                </span>
                 <Kbd>Cmd+Enter</Kbd>
               </TooltipContent>
             </Tooltip>

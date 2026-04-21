@@ -12,8 +12,9 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Bicep to Terraform Converter",
-  description: "Enterprise-grade Azure Bicep to OpenTofu/Terraform modernization",
+  title: "Terrain — Infrastructure Modernization",
+  description:
+    "Chart your infrastructure across every cloud — convert Azure Bicep or AWS CloudFormation to OpenTofu/Terraform.",
 };
 
 export default function RootLayout({

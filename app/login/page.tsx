@@ -37,7 +37,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm space-y-6 rounded-lg border p-6">
         <div className="flex flex-col items-center gap-2">
           <ArrowLeftRight className="h-8 w-8 text-cta" />
-          <h1 className="text-xl font-semibold">Bicep Converter</h1>
+          <h1 className="text-xl font-semibold">Terrain</h1>
           <p className="text-sm text-muted-foreground">Sign in to continue</p>
         </div>
 

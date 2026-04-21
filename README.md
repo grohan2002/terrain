@@ -1,21 +1,24 @@
-# Bicep UI
+# Terrain
 
-An AI-powered web application that converts Azure Bicep infrastructure-as-code to Terraform / OpenTofu using Claude as the conversion agent. Built with the R Systems design language.
+> Chart your infrastructure across every cloud.
+
+Terrain is an AI-powered infrastructure modernization platform that converts Azure Bicep **and** AWS CloudFormation templates to Terraform/OpenTofu — using Claude as the conversion agent, the HashiCorp Terraform MCP server for authoritative provider schemas, and the Azure MCP server for live pre-flight validation.
 
 ## Features
 
-- **Single-file conversion** — Paste or upload a `.bicep` file and get Terraform output streamed in real time
-- **Multi-file project conversion** — Upload an entire Bicep project with modules and parameter files
-- **GitHub repo import** — Point at a GitHub repository and auto-discover all `.bicep` / `.bicepparam` files
+- **Multi-source conversion** — Toggle between Bicep and CloudFormation in the UI. Each language has its own dedicated pipeline, system prompt, and resource mapping table.
+  - **Bicep** → Azure Terraform (`azurerm_*`). Single-file or multi-file Bicep projects with modules and `.bicepparam`.
+  - **CloudFormation** → AWS Terraform (`aws_*`). YAML or JSON. Intrinsic short-forms (`!Ref`, `!GetAtt`, `!Sub`, `!If`, `!FindInMap`, `!GetAZs`, …) are normalised before conversion.
+- **GitHub repo import** — Point at a GitHub repository and auto-discover Bicep files
 - **AI agent conversation** — Watch the Claude agent reason, call tools, and iterate on the conversion
 - **Validation** — Runs `tofu validate` against the generated Terraform to catch errors
-- **Cost estimation** — Estimates monthly cloud costs for the converted infrastructure
-- **Policy & security scanning** — Scans output against OPA policies and Trivy security rules
-- **Resource graph** — Interactive visualisation of Bicep-to-Terraform resource mappings
+- **Cost estimation** — Real-time Azure/AWS pricing via Infracost (falls back to a built-in estimator)
+- **Policy & security scanning** — OPA-powered policy evaluation and Trivy misconfiguration scans
+- **Resource graph** — Interactive visualisation of IaC resource mappings
 - **Diff viewer** — Side-by-side before/after comparison
-- **Deployment** — Deploy converted Terraform directly to Azure with a chat-driven agent
+- **Deployment** — Deploy converted Terraform to Azure with a chat-driven agent (AWS deploy coming soon)
 - **Token usage dashboard** — Per-conversion and cumulative token/cost tracking
-- **Conversion history** — Browse and restore previous conversions with cost data
+- **Conversion history** — Browse and restore previous conversions with cost data; source-format badge per entry
 - **Role-based access control** — Four-tier RBAC (Viewer → Converter → Deployer → Admin)
 - **Audit logging** — Full audit trail of all actions
 
@@ -52,8 +55,8 @@ Follow these steps in order to get the app running with all historical data inta
 ### Step 1: Clone the repository
 
 ```bash
-git clone https://github.com/grohan2002/bicep-ui.git
-cd bicep-ui
+git clone https://github.com/grohan2002/terrain.git
+cd terrain
 ```
 
 ### Step 2: Install Node.js dependencies
@@ -85,7 +88,7 @@ AUTH_GITHUB_ID=
 AUTH_GITHUB_SECRET=
 
 # ── Database (matches docker-compose.yml defaults) ────────
-DATABASE_URL=postgresql://bicepui:bicepui@postgres:5432/bicepui
+DATABASE_URL=postgresql://terrain:terrain@postgres:5432/terrain
 
 # ── Redis ─────────────────────────────────────────────────
 REDIS_URL=redis://redis:6379
@@ -117,7 +120,7 @@ This starts three services:
 
 | Service | Host → Container | Description |
 |---------|------------------|-------------|
-| **app** | 3001 → 3000 | Bicep UI (Next.js + OpenTofu + Azure CLI + Infracost + OPA + Trivy + @azure/mcp) |
+| **app** | 3001 → 3000 | Terrain (Next.js + OpenTofu + Azure CLI + Infracost + OPA + Trivy + @azure/mcp) |
 | **terraform-mcp** | _(internal)_ → 8080 | HashiCorp Terraform MCP server (streamable-HTTP) |
 | **postgres** | 5432 → 5432 | PostgreSQL 16 with persistent volume |
 | **redis** | 6380 → 6379 | Redis 7 with persistent volume |
@@ -136,11 +139,11 @@ The Prisma schema needs to be applied to the empty PostgreSQL database:
 
 ```bash
 # Option A: Using Prisma from outside the container
-DATABASE_URL="postgresql://bicepui:bicepui@localhost:5432/bicepui" npx prisma db push
+DATABASE_URL="postgresql://terrain:terrain@localhost:5432/terrain" npx prisma db push
 
 # Option B: Using the included SQL dump file
-docker cp bicepui-dump.sql bicep-ui-postgres-1:/tmp/bicepui-dump.sql
-docker exec -i bicep-ui-postgres-1 psql -U bicepui -d bicepui -f /tmp/bicepui-dump.sql
+docker cp terrain-dump.sql terrain-postgres-1:/tmp/terrain-dump.sql
+docker exec -i terrain-postgres-1 psql -U terrain -d terrain -f /tmp/terrain-dump.sql
 ```
 
 ### Step 6: Restore historical data (optional)
@@ -149,11 +152,11 @@ If you have a database dump from another machine with conversion/deployment hist
 
 ```bash
 # Copy the dump file into the postgres container and restore
-docker cp bicepui-dump.sql bicep-ui-postgres-1:/tmp/bicepui-dump.sql
-docker exec -i bicep-ui-postgres-1 psql -U bicepui -d bicepui -f /tmp/bicepui-dump.sql
+docker cp terrain-dump.sql terrain-postgres-1:/tmp/terrain-dump.sql
+docker exec -i terrain-postgres-1 psql -U terrain -d terrain -f /tmp/terrain-dump.sql
 ```
 
-The included `bicepui-dump.sql` contains the full schema (tables, indexes, foreign keys, enums). If you have a dump with data rows, it will also restore all historical conversions, deployments, and audit logs.
+The included `terrain-dump.sql` contains the full schema (tables, indexes, foreign keys, enums). If you have a dump with data rows, it will also restore all historical conversions, deployments, and audit logs.
 
 ### Step 7: Generate the Prisma client
 
@@ -168,7 +171,7 @@ npx prisma generate
 docker compose ps
 
 # Check database tables exist
-docker exec bicep-ui-postgres-1 psql -U bicepui -d bicepui -c "\dt"
+docker exec terrain-postgres-1 psql -U terrain -d terrain -c "\dt"
 ```
 
 Expected output:
@@ -176,10 +179,10 @@ Expected output:
 ```
  Schema |    Name     | Type  |  Owner
 --------+-------------+-------+---------
- public | audit_logs  | table | bicepui
- public | conversions | table | bicepui
- public | deployments | table | bicepui
- public | users       | table | bicepui
+ public | audit_logs  | table | terrain
+ public | conversions | table | terrain
+ public | deployments | table | terrain
+ public | users       | table | terrain
 ```
 
 ### Step 9: Open the app
@@ -199,7 +202,7 @@ Or configure GitHub OAuth via `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` for SSO.
 To export the current database for transfer to another machine:
 
 ```bash
-docker exec bicep-ui-postgres-1 pg_dump -U bicepui -d bicepui --clean --if-exists > bicepui-dump.sql
+docker exec terrain-postgres-1 pg_dump -U terrain -d terrain --clean --if-exists > terrain-dump.sql
 ```
 
 This creates a portable SQL file with:
@@ -221,7 +224,7 @@ npm install
 cp .env.example .env
 
 # 3. Push schema to your local Postgres
-DATABASE_URL="postgresql://user:pass@localhost:5432/bicepui" npx prisma db push
+DATABASE_URL="postgresql://user:pass@localhost:5432/terrain" npx prisma db push
 
 # 4. Generate Prisma client
 npx prisma generate
@@ -316,7 +319,7 @@ Interactive API docs are available at [http://localhost:3001/api-docs](http://lo
 ## Project Structure
 
 ```
-bicep-ui/
+terrain/
 ├── app/                          # Next.js app directory
 │   ├── api/                      #   API routes
 │   ├── convert/                  #   Conversion page
@@ -363,8 +366,8 @@ bicep-ui/
 │
 ├── Dockerfile                    # Multi-stage build (Node + OpenTofu + Azure CLI + Trivy)
 ├── docker-compose.yml            # Full stack (app + Postgres + Redis)
-├── bicepui-dump.sql              # PostgreSQL dump for data migration
-├── Bicep-UI-Agent-Architecture.pptx  # Architecture overview deck
+├── terrain-dump.sql              # PostgreSQL dump for data migration
+├── Terrain-Agent-Architecture.pptx  # Architecture overview deck
 └── .env.example                  # Environment variable template
 ```
 
@@ -407,7 +410,7 @@ The app uses two Claude-powered agents that work in sequence:
 - **Max rounds:** 40
 - **Workflow:** Plan → Pre-flight Checks → Apply → Outputs → Test (Existence + Connectivity + Config) → Report
 
-See `Bicep-UI-Agent-Architecture.pptx` for visual diagrams.
+See `Terrain-Agent-Architecture.pptx` for visual diagrams.
 
 ---
 
@@ -496,7 +499,7 @@ The CLI requires an API key to reach Infracost's pricing service. The simplest w
    ```
 4. Re-run the cost estimate — the panel header should flip from the amber **"Fallback estimate"** badge to the green **"Infracost"** badge.
 
-Alternatively, `docker exec -it bicep-ui-app-1 infracost auth login` walks you through an interactive browser flow and writes credentials to `/home/nextjs/.config/infracost/credentials.yml` inside the container (lost on rebuild unless you mount the directory as a volume).
+Alternatively, `docker exec -it terrain-app-1 infracost auth login` walks you through an interactive browser flow and writes credentials to `/home/nextjs/.config/infracost/credentials.yml` inside the container (lost on rebuild unless you mount the directory as a volume).
 
 ---
 

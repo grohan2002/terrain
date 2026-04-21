@@ -54,8 +54,8 @@ export default function MappingsPage() {
           Resource Mappings
         </h1>
         <p className="mt-1 text-muted-foreground">
-          Browse all {Object.keys(RESOURCE_TYPE_MAP).length} Bicep to Terraform
-          resource type mappings
+          Browse the {Object.keys(RESOURCE_TYPE_MAP).length} Bicep → AzureRM mappings
+          (CloudFormation → AWS mappings are looked up dynamically via the Terraform MCP server)
         </p>
       </div>
 

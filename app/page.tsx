@@ -22,10 +22,10 @@ export default function DashboardPage() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-cta">Dashboard</p>
         <h1 className="text-2xl font-bold tracking-tight">
-          Bicep to Terraform Converter
+          Terrain
         </h1>
         <p className="mt-1 text-muted-foreground">
-          Enterprise-grade Azure Bicep to OpenTofu/Terraform modernization
+          Chart your infrastructure across every cloud — Azure Bicep and AWS CloudFormation to OpenTofu/Terraform.
         </p>
       </div>
 
@@ -42,7 +42,7 @@ export default function DashboardPage() {
               </div>
               <CardTitle className="text-base">Convert File</CardTitle>
               <CardDescription>
-                Upload a .bicep file or paste code to convert
+                Upload Bicep or CloudFormation and convert to Terraform
               </CardDescription>
             </CardHeader>
           </Card>
@@ -59,7 +59,7 @@ export default function DashboardPage() {
               </div>
               <CardTitle className="text-base">Batch Convert</CardTitle>
               <CardDescription>
-                Process multiple .bicep files at once
+                Process multiple IaC files at once
               </CardDescription>
             </CardHeader>
           </Card>
@@ -76,7 +76,7 @@ export default function DashboardPage() {
               </div>
               <CardTitle className="text-base">Resource Mappings</CardTitle>
               <CardDescription>
-                Browse all Bicep to Terraform type mappings
+                Browse Bicep → Azure and CloudFormation → AWS Terraform mappings
               </CardDescription>
             </CardHeader>
           </Card>

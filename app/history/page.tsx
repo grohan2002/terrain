@@ -84,7 +84,7 @@ export default function HistoryPage() {
           Conversion History
         </h1>
         <p className="mt-1 text-muted-foreground">
-          View past Bicep to Terraform conversions
+          View past Bicep and CloudFormation conversions
         </p>
       </div>
 

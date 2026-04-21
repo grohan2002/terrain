@@ -135,7 +135,7 @@ export default function BatchPage() {
         <p className="text-xs font-semibold uppercase tracking-wider text-cta">Batch Processing</p>
         <h1 className="text-2xl font-bold tracking-tight">Batch Convert</h1>
         <p className="mt-1 text-muted-foreground">
-          Convert multiple Bicep files to Terraform at once
+          Convert multiple IaC files to Terraform at once
         </p>
       </div>
 

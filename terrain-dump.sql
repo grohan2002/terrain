@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict VEJJSTmvu8sjkNhuUaLAB3e9lBmwI2riSIbS2thcnuwBX3GRXKgdvqYbPgu3Esr
+\restrict h8m7ViWkimaoooY4SSoi5Tes5CGdEUPzQiwghn6wnjccxlqZ8PM9RHxCm3Q4NUh
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -39,7 +39,7 @@ DROP TABLE IF EXISTS public.conversions;
 DROP TABLE IF EXISTS public.audit_logs;
 DROP TYPE IF EXISTS public."Role";
 --
--- Name: Role; Type: TYPE; Schema: public; Owner: bicepui
+-- Name: Role; Type: TYPE; Schema: public; Owner: terrain
 --
 
 CREATE TYPE public."Role" AS ENUM (
@@ -50,14 +50,14 @@ CREATE TYPE public."Role" AS ENUM (
 );
 
 
-ALTER TYPE public."Role" OWNER TO bicepui;
+ALTER TYPE public."Role" OWNER TO terrain;
 
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 
 --
--- Name: audit_logs; Type: TABLE; Schema: public; Owner: bicepui
+-- Name: audit_logs; Type: TABLE; Schema: public; Owner: terrain
 --
 
 CREATE TABLE public.audit_logs (
@@ -70,10 +70,10 @@ CREATE TABLE public.audit_logs (
 );
 
 
-ALTER TABLE public.audit_logs OWNER TO bicepui;
+ALTER TABLE public.audit_logs OWNER TO terrain;
 
 --
--- Name: conversions; Type: TABLE; Schema: public; Owner: bicepui
+-- Name: conversions; Type: TABLE; Schema: public; Owner: terrain
 --
 
 CREATE TABLE public.conversions (
@@ -92,10 +92,10 @@ CREATE TABLE public.conversions (
 );
 
 
-ALTER TABLE public.conversions OWNER TO bicepui;
+ALTER TABLE public.conversions OWNER TO terrain;
 
 --
--- Name: deployments; Type: TABLE; Schema: public; Owner: bicepui
+-- Name: deployments; Type: TABLE; Schema: public; Owner: terrain
 --
 
 CREATE TABLE public.deployments (
@@ -111,10 +111,10 @@ CREATE TABLE public.deployments (
 );
 
 
-ALTER TABLE public.deployments OWNER TO bicepui;
+ALTER TABLE public.deployments OWNER TO terrain;
 
 --
--- Name: users; Type: TABLE; Schema: public; Owner: bicepui
+-- Name: users; Type: TABLE; Schema: public; Owner: terrain
 --
 
 CREATE TABLE public.users (
@@ -127,10 +127,10 @@ CREATE TABLE public.users (
 );
 
 
-ALTER TABLE public.users OWNER TO bicepui;
+ALTER TABLE public.users OWNER TO terrain;
 
 --
--- Data for Name: audit_logs; Type: TABLE DATA; Schema: public; Owner: bicepui
+-- Data for Name: audit_logs; Type: TABLE DATA; Schema: public; Owner: terrain
 --
 
 COPY public.audit_logs (id, user_id, action, details, ip, created_at) FROM stdin;
@@ -138,7 +138,7 @@ COPY public.audit_logs (id, user_id, action, details, ip, created_at) FROM stdin
 
 
 --
--- Data for Name: conversions; Type: TABLE DATA; Schema: public; Owner: bicepui
+-- Data for Name: conversions; Type: TABLE DATA; Schema: public; Owner: terrain
 --
 
 COPY public.conversions (id, user_id, bicep_filename, bicep_content, terraform_files, validation_passed, model, input_tokens, output_tokens, total_cost_usd, status, created_at) FROM stdin;
@@ -146,7 +146,7 @@ COPY public.conversions (id, user_id, bicep_filename, bicep_content, terraform_f
 
 
 --
--- Data for Name: deployments; Type: TABLE DATA; Schema: public; Owner: bicepui
+-- Data for Name: deployments; Type: TABLE DATA; Schema: public; Owner: terrain
 --
 
 COPY public.deployments (id, user_id, resource_group_name, tests_passed, tests_failed, destroyed, total_cost_usd, status, created_at) FROM stdin;
@@ -154,7 +154,7 @@ COPY public.deployments (id, user_id, resource_group_name, tests_passed, tests_f
 
 
 --
--- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: bicepui
+-- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: terrain
 --
 
 COPY public.users (id, email, name, role, created_at, updated_at) FROM stdin;
@@ -162,7 +162,7 @@ COPY public.users (id, email, name, role, created_at, updated_at) FROM stdin;
 
 
 --
--- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: bicepui
+-- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: terrain
 --
 
 ALTER TABLE ONLY public.audit_logs
@@ -170,7 +170,7 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
--- Name: conversions conversions_pkey; Type: CONSTRAINT; Schema: public; Owner: bicepui
+-- Name: conversions conversions_pkey; Type: CONSTRAINT; Schema: public; Owner: terrain
 --
 
 ALTER TABLE ONLY public.conversions
@@ -178,7 +178,7 @@ ALTER TABLE ONLY public.conversions
 
 
 --
--- Name: deployments deployments_pkey; Type: CONSTRAINT; Schema: public; Owner: bicepui
+-- Name: deployments deployments_pkey; Type: CONSTRAINT; Schema: public; Owner: terrain
 --
 
 ALTER TABLE ONLY public.deployments
@@ -186,7 +186,7 @@ ALTER TABLE ONLY public.deployments
 
 
 --
--- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: bicepui
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: terrain
 --
 
 ALTER TABLE ONLY public.users
@@ -194,63 +194,63 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: audit_logs_action_idx; Type: INDEX; Schema: public; Owner: bicepui
+-- Name: audit_logs_action_idx; Type: INDEX; Schema: public; Owner: terrain
 --
 
 CREATE INDEX audit_logs_action_idx ON public.audit_logs USING btree (action);
 
 
 --
--- Name: audit_logs_created_at_idx; Type: INDEX; Schema: public; Owner: bicepui
+-- Name: audit_logs_created_at_idx; Type: INDEX; Schema: public; Owner: terrain
 --
 
 CREATE INDEX audit_logs_created_at_idx ON public.audit_logs USING btree (created_at);
 
 
 --
--- Name: audit_logs_user_id_idx; Type: INDEX; Schema: public; Owner: bicepui
+-- Name: audit_logs_user_id_idx; Type: INDEX; Schema: public; Owner: terrain
 --
 
 CREATE INDEX audit_logs_user_id_idx ON public.audit_logs USING btree (user_id);
 
 
 --
--- Name: conversions_created_at_idx; Type: INDEX; Schema: public; Owner: bicepui
+-- Name: conversions_created_at_idx; Type: INDEX; Schema: public; Owner: terrain
 --
 
 CREATE INDEX conversions_created_at_idx ON public.conversions USING btree (created_at);
 
 
 --
--- Name: conversions_user_id_idx; Type: INDEX; Schema: public; Owner: bicepui
+-- Name: conversions_user_id_idx; Type: INDEX; Schema: public; Owner: terrain
 --
 
 CREATE INDEX conversions_user_id_idx ON public.conversions USING btree (user_id);
 
 
 --
--- Name: deployments_created_at_idx; Type: INDEX; Schema: public; Owner: bicepui
+-- Name: deployments_created_at_idx; Type: INDEX; Schema: public; Owner: terrain
 --
 
 CREATE INDEX deployments_created_at_idx ON public.deployments USING btree (created_at);
 
 
 --
--- Name: deployments_user_id_idx; Type: INDEX; Schema: public; Owner: bicepui
+-- Name: deployments_user_id_idx; Type: INDEX; Schema: public; Owner: terrain
 --
 
 CREATE INDEX deployments_user_id_idx ON public.deployments USING btree (user_id);
 
 
 --
--- Name: users_email_key; Type: INDEX; Schema: public; Owner: bicepui
+-- Name: users_email_key; Type: INDEX; Schema: public; Owner: terrain
 --
 
 CREATE UNIQUE INDEX users_email_key ON public.users USING btree (email);
 
 
 --
--- Name: audit_logs audit_logs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: bicepui
+-- Name: audit_logs audit_logs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: terrain
 --
 
 ALTER TABLE ONLY public.audit_logs
@@ -258,7 +258,7 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
--- Name: conversions conversions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: bicepui
+-- Name: conversions conversions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: terrain
 --
 
 ALTER TABLE ONLY public.conversions
@@ -266,7 +266,7 @@ ALTER TABLE ONLY public.conversions
 
 
 --
--- Name: deployments deployments_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: bicepui
+-- Name: deployments deployments_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: terrain
 --
 
 ALTER TABLE ONLY public.deployments
@@ -277,5 +277,5 @@ ALTER TABLE ONLY public.deployments
 -- PostgreSQL database dump complete
 --
 
-\unrestrict VEJJSTmvu8sjkNhuUaLAB3e9lBmwI2riSIbS2thcnuwBX3GRXKgdvqYbPgu3Esr
+\unrestrict h8m7ViWkimaoooY4SSoi5Tes5CGdEUPzQiwghn6wnjccxlqZ8PM9RHxCm3Q4NUh
 

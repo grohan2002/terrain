@@ -1,24 +1,25 @@
 // ---------------------------------------------------------------------------
-// OpenAPI 3.0 specification for the Bicep-to-Terraform Converter API.
+// OpenAPI 3.0 specification for the Terrain API.
 // ---------------------------------------------------------------------------
 
 export function getOpenApiSpec() {
   return {
     openapi: "3.0.3",
     info: {
-      title: "Bicep-to-Terraform Converter API",
+      title: "Terrain API",
       version: "1.0.0",
       description:
-        "REST API for converting Azure Bicep templates to Terraform, deploying infrastructure, running security scans, evaluating policies, and estimating costs.",
+        "REST API for converting Azure Bicep and AWS CloudFormation templates to Terraform/OpenTofu, deploying infrastructure, running security scans, evaluating policies, and estimating costs.",
     },
     servers: [{ url: "/", description: "Current server" }],
     paths: {
       "/api/convert": {
         post: {
-          summary: "Convert Bicep to Terraform",
+          summary: "Convert Bicep or CloudFormation to Terraform",
           description:
-            "Streams the conversion process as Server-Sent Events. Accepts either a single-file payload (bicepContent) or a multi-file project payload (bicepFiles + entryPoint). " +
-            "The AI agent analyzes the Bicep content, resolves module dependencies, and generates equivalent Terraform files.",
+            "Streams the conversion process as Server-Sent Events. Set `sourceFormat` to \"bicep\" (default) or \"cloudformation\" to dispatch to the corresponding pipeline. " +
+            "Accepts either a single-file payload (bicepContent) or a multi-file Bicep project payload (bicepFiles + entryPoint). " +
+            "The AI agent parses the source, maps resources, and generates equivalent Terraform files.",
           tags: ["Conversion"],
           requestBody: {
             required: true,
@@ -465,7 +466,7 @@ export function getOpenApiSpec() {
     },
     security: [{ session: [] }],
     tags: [
-      { name: "Conversion", description: "Bicep-to-Terraform conversion" },
+      { name: "Conversion", description: "Bicep and CloudFormation to Terraform conversion" },
       { name: "Deployment", description: "Infrastructure deployment and testing" },
       { name: "Security", description: "Security scanning and policy evaluation" },
       { name: "Cost", description: "Infrastructure cost estimation" },
