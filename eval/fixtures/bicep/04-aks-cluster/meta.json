@@ -1,0 +1,10 @@
+{
+  "name": "bicep/04-aks-cluster",
+  "sourceFormat": "bicep",
+  "inputFile": "input.bicep",
+  "description": "AKS cluster — regression test for prior output-overwrite bug (empty main.tf).",
+  "expectedResourceCount": 5,
+  "maxCostUsd": 0.2,
+  "maxRounds": 18,
+  "expectValidationPass": true
+}

@@ -1,0 +1,10 @@
+{
+  "name": "cf/03-vpc-subnets",
+  "sourceFormat": "cloudformation",
+  "inputFile": "input.yaml",
+  "description": "VPC + subnets \u2014 exercises !Ref, !GetAZs, !Select, !FindInMap intrinsics.",
+  "expectedResourceCount": 10,
+  "maxCostUsd": 0.25,
+  "maxRounds": 20,
+  "expectValidationPass": true
+}

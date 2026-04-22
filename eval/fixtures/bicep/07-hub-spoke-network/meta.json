@@ -1,0 +1,10 @@
+{
+  "name": "bicep/07-hub-spoke-network",
+  "sourceFormat": "bicep",
+  "inputFile": "input.bicep",
+  "description": "Hub-and-spoke networking topology — VNet peering, NSGs, route tables.",
+  "expectedResourceCount": 10,
+  "maxCostUsd": 0.3,
+  "maxRounds": 22,
+  "expectValidationPass": true
+}

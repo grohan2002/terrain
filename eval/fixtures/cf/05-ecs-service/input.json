@@ -1,0 +1,92 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "ECS Fargate service with task definition and CloudWatch logs (JSON template).",
+  "Parameters": {
+    "ClusterName": {
+      "Type": "String",
+      "Default": "app-cluster"
+    },
+    "ServiceName": {
+      "Type": "String",
+      "Default": "web-service"
+    },
+    "ContainerImage": {
+      "Type": "String",
+      "Default": "nginx:alpine"
+    },
+    "DesiredCount": {
+      "Type": "Number",
+      "Default": 1,
+      "MinValue": 1,
+      "MaxValue": 10
+    }
+  },
+  "Resources": {
+    "Cluster": {
+      "Type": "AWS::ECS::Cluster",
+      "Properties": {
+        "ClusterName": { "Ref": "ClusterName" },
+        "CapacityProviders": ["FARGATE"],
+        "Tags": [
+          { "Key": "Service", "Value": { "Ref": "ServiceName" } }
+        ]
+      }
+    },
+    "TaskExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": { "Service": "ecs-tasks.amazonaws.com" },
+            "Action": "sts:AssumeRole"
+          }]
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+        ]
+      }
+    },
+    "LogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": { "Fn::Sub": "/ecs/${ServiceName}" },
+        "RetentionInDays": 7
+      }
+    },
+    "TaskDefinition": {
+      "Type": "AWS::ECS::TaskDefinition",
+      "Properties": {
+        "Family": { "Ref": "ServiceName" },
+        "Cpu": "256",
+        "Memory": "512",
+        "NetworkMode": "awsvpc",
+        "RequiresCompatibilities": ["FARGATE"],
+        "ExecutionRoleArn": { "Fn::GetAtt": ["TaskExecutionRole", "Arn"] },
+        "ContainerDefinitions": [{
+          "Name": "app",
+          "Image": { "Ref": "ContainerImage" },
+          "Essential": true,
+          "PortMappings": [{ "ContainerPort": 80, "Protocol": "tcp" }],
+          "LogConfiguration": {
+            "LogDriver": "awslogs",
+            "Options": {
+              "awslogs-group": { "Ref": "LogGroup" },
+              "awslogs-region": { "Ref": "AWS::Region" },
+              "awslogs-stream-prefix": "ecs"
+            }
+          }
+        }]
+      }
+    }
+  },
+  "Outputs": {
+    "ClusterArn": {
+      "Value": { "Fn::GetAtt": ["Cluster", "Arn"] }
+    },
+    "TaskDefinitionArn": {
+      "Value": { "Ref": "TaskDefinition" }
+    }
+  }
+}

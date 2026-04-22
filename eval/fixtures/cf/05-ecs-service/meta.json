@@ -1,0 +1,10 @@
+{
+  "name": "cf/05-ecs-service",
+  "sourceFormat": "cloudformation",
+  "inputFile": "input.json",
+  "description": "ECS service (JSON template) \u2014 tests the CF JSON path and cluster/service/task-def wiring.",
+  "expectedResourceCount": 4,
+  "maxCostUsd": 0.15,
+  "maxRounds": 18,
+  "expectValidationPass": true
+}

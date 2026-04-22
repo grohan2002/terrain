@@ -1,0 +1,10 @@
+{
+  "name": "bicep/02-vnet-with-subnets",
+  "sourceFormat": "bicep",
+  "inputFile": "input.bicep",
+  "description": "VNet + subnet — tests parent/child resource handling.",
+  "expectedResourceCount": 2,
+  "maxCostUsd": 0.08,
+  "maxRounds": 12,
+  "expectValidationPass": true
+}

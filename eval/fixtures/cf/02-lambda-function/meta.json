@@ -1,0 +1,10 @@
+{
+  "name": "cf/02-lambda-function",
+  "sourceFormat": "cloudformation",
+  "inputFile": "input.yaml",
+  "description": "Lambda function + IAM role + log group \u2014 tests IAM policy inlining.",
+  "expectedResourceCount": 3,
+  "maxCostUsd": 0.1,
+  "maxRounds": 14,
+  "expectValidationPass": true
+}
