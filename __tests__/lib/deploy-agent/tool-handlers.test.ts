@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+// Type-only — `typeof execSync` narrows the mock cast below. The actual module
+// is replaced by vi.mock("node:child_process", ...) further down.
+import type { execSync } from "node:child_process";
 import {
   createDeployToolHandlers,
   type DeployToolCallbacks,

@@ -55,7 +55,8 @@ describe("buildAzureEnv", () => {
 
   it("preserves other env vars when azureConfig is provided", () => {
     process.env.HOME = "/home/testuser";
-    process.env.NODE_ENV = "test";
+    // NODE_ENV is typed readonly by @types/node; assign via a writable cast.
+    (process.env as { NODE_ENV: string }).NODE_ENV = "test";
     const result = buildAzureEnv(mockConfig);
     expect(result.HOME).toBe("/home/testuser");
     expect(result.NODE_ENV).toBe("test");

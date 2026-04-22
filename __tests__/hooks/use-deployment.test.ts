@@ -54,7 +54,7 @@ vi.mock("@/components/ui/sonner", () => ({
 // Mock Zustand store
 // ---------------------------------------------------------------------------
 const storeMethods = {
-  terraformFiles: { "main.tf": 'resource "azurerm_resource_group" "rg" {}' },
+  terraformFiles: { "main.tf": 'resource "azurerm_resource_group" "rg" {}' } as Record<string, string>,
   bicepContent: "resource storageAccount ...",
   deployWorkingDir: "/tmp/test-deploy",
   deployResourceGroup: "test-rg",

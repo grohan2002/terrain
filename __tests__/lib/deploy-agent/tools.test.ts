@@ -29,7 +29,7 @@ describe("deployTools", () => {
 
   it("every tool has a non-empty description", () => {
     for (const tool of deployTools) {
-      expect(tool.description.length, `${tool.name} description`).toBeGreaterThan(10);
+      expect(tool.description!.length, `${tool.name} description`).toBeGreaterThan(10);
     }
   });
 
@@ -82,7 +82,7 @@ describe("deployTools", () => {
 
   it("terraform_destroy description warns about explicit user confirmation", () => {
     const tool = deployTools.find((t) => t.name === "terraform_destroy")!;
-    expect(tool.description.toLowerCase()).toContain("explicit");
+    expect(tool.description!.toLowerCase()).toContain("explicit");
   });
 
   it("terraform_plan/apply/destroy/outputs all require working_dir", () => {
