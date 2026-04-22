@@ -64,10 +64,15 @@ export const DeployDestroySchema = z.object({
   azureConfig: AzureConfigSchema.optional(),
 });
 
-/** POST /api/github/scan — scan a GitHub repo for Bicep files */
+/** POST /api/github/scan — scan a GitHub repo for Bicep or CloudFormation files */
 export const GitHubScanRequestSchema = z.object({
   repoUrl: z.string().min(1, "repoUrl is required"),
   branch: z.string().optional(),
   subdirectory: z.string().optional(),
   token: z.string().optional(),
+  /**
+   * Which source format to scan for. Defaults to `"bicep"` for back-compat
+   * with clients that predate CloudFormation support.
+   */
+  sourceFormat: z.enum(["bicep", "cloudformation"]).default("bicep"),
 });

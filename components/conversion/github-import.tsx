@@ -31,6 +31,9 @@ import type { BicepFiles } from "@/lib/types";
 
 interface ScanStats {
   totalFilesInRepo: number;
+  /** Number of source files (Bicep or CloudFormation) found and loaded. */
+  sourceFilesFound: number;
+  /** @deprecated alias of sourceFilesFound */
   bicepFilesFound: number;
   totalBytesLoaded: number;
   branch: string;
@@ -41,8 +44,13 @@ interface ScanStats {
 // Component
 // ---------------------------------------------------------------------------
 
+const CF_ROOT_EXTENSIONS = [".yaml", ".yml", ".json", ".template"];
+
 export function GitHubImport() {
   const setBicepFiles = useConversionStore((s) => s.setBicepFiles);
+  const setBicepContent = useConversionStore((s) => s.setBicepContent);
+  const sourceFormat = useConversionStore((s) => s.sourceFormat);
+  const isCf = sourceFormat === "cloudformation";
 
   // Input state
   const [repoUrl, setRepoUrl] = useState("");
@@ -68,16 +76,21 @@ export function GitHubImport() {
     [pendingFiles],
   );
 
-  const rootBicepFiles = useMemo(
-    () =>
-      pendingPaths.filter(
+  const rootSourceFiles = useMemo(() => {
+    if (isCf) {
+      return pendingPaths.filter(
         (p) =>
           !p.includes("/") &&
-          p.endsWith(".bicep") &&
-          !p.endsWith(".bicepparam"),
-      ),
-    [pendingPaths],
-  );
+          CF_ROOT_EXTENSIONS.some((ext) => p.toLowerCase().endsWith(ext)),
+      );
+    }
+    return pendingPaths.filter(
+      (p) =>
+        !p.includes("/") &&
+        p.endsWith(".bicep") &&
+        !p.endsWith(".bicepparam"),
+    );
+  }, [pendingPaths, isCf]);
 
   // -------------------------------------------------------------------------
   // Scan handler
@@ -96,6 +109,7 @@ export function GitHubImport() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           repoUrl: repoUrl.trim(),
+          sourceFormat,
           ...(branch.trim() && { branch: branch.trim() }),
           ...(subdirectory.trim() && { subdirectory: subdirectory.trim() }),
           ...(token.trim() && { token: token.trim() }),
@@ -108,13 +122,16 @@ export function GitHubImport() {
         throw new Error(data.error || `Scan failed (${res.status})`);
       }
 
-      // Detect registry modules (same pattern as multi-file-upload)
+      // Detect registry modules — Bicep-only. (CloudFormation cross-stack
+      // refs via Fn::ImportValue are surfaced by the agent during conversion.)
       const regMods: string[] = [];
-      for (const [filePath, content] of Object.entries(data.files as BicepFiles)) {
-        const refs = parseModuleReferences(filePath, content);
-        for (const ref of refs) {
-          if (ref.resolvedPath === null) {
-            regMods.push(`${ref.name} (${ref.source})`);
+      if (!isCf) {
+        for (const [filePath, content] of Object.entries(data.files as BicepFiles)) {
+          const refs = parseModuleReferences(filePath, content);
+          for (const ref of refs) {
+            if (ref.resolvedPath === null) {
+              regMods.push(`${ref.name} (${ref.source})`);
+            }
           }
         }
       }
@@ -128,7 +145,7 @@ export function GitHubImport() {
     } finally {
       setScanning(false);
     }
-  }, [repoUrl, branch, subdirectory, token]);
+  }, [repoUrl, branch, subdirectory, token, sourceFormat, isCf]);
 
   // -------------------------------------------------------------------------
   // Confirm handler
@@ -136,13 +153,30 @@ export function GitHubImport() {
 
   const confirmImport = useCallback(() => {
     if (!pendingFiles) return;
-    setBicepFiles(pendingFiles, selectedEntryPoint);
-    toast.success("GitHub project loaded", {
-      description: `${Object.keys(pendingFiles).length} file(s) from ${repoUrl}`,
-    });
+    if (isCf) {
+      // Phase A: single-file CF pipeline. Load only the chosen entry point's
+      // content. Multi-file CF (nested-stack project conversion) is Phase B.
+      const content = pendingFiles[selectedEntryPoint] ?? "";
+      setBicepContent(content, selectedEntryPoint);
+      toast.success("GitHub template loaded", {
+        description: `${selectedEntryPoint} from ${repoUrl}`,
+      });
+    } else {
+      setBicepFiles(pendingFiles, selectedEntryPoint);
+      toast.success("GitHub project loaded", {
+        description: `${Object.keys(pendingFiles).length} file(s) from ${repoUrl}`,
+      });
+    }
     setPendingFiles(null);
     setRepoUrl("");
-  }, [pendingFiles, selectedEntryPoint, setBicepFiles, repoUrl]);
+  }, [
+    pendingFiles,
+    selectedEntryPoint,
+    setBicepFiles,
+    setBicepContent,
+    isCf,
+    repoUrl,
+  ]);
 
   // -------------------------------------------------------------------------
   // Preview phase
@@ -155,7 +189,8 @@ export function GitHubImport() {
         <div className="flex items-center gap-2">
           <Github className="h-5 w-5 text-muted-foreground" />
           <span className="text-sm font-medium">
-            {stats.bicepFilesFound} Bicep file(s) found
+            {stats.sourceFilesFound ?? stats.bicepFilesFound}{" "}
+            {isCf ? "CloudFormation" : "Bicep"} file(s) found
           </span>
           <Badge variant="secondary" className="text-[10px]">
             {stats.branch}
@@ -184,14 +219,14 @@ export function GitHubImport() {
         {/* Entry point selector */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Entry point:</span>
-          {rootBicepFiles.length > 1 ? (
+          {rootSourceFiles.length > 1 ? (
             <DropdownMenu>
               <DropdownMenuTrigger className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium hover:bg-accent transition-colors">
                 {selectedEntryPoint}
                 <ChevronDown className="h-3 w-3" />
               </DropdownMenuTrigger>
               <DropdownMenuContent>
-                {rootBicepFiles.map((f) => (
+                {rootSourceFiles.map((f) => (
                   <DropdownMenuItem
                     key={f}
                     onClick={() => setSelectedEntryPoint(f)}
@@ -208,7 +243,7 @@ export function GitHubImport() {
           )}
         </div>
 
-        {/* Registry module warnings */}
+        {/* Registry module warnings (Bicep only) */}
         {registryModules.length > 0 && (
           <div className="w-full max-w-sm rounded-md border border-yellow-300 bg-yellow-50 dark:border-yellow-700 dark:bg-yellow-950/30 p-2.5 text-xs space-y-1">
             <div className="flex items-center gap-1.5 text-yellow-700 dark:text-yellow-400 font-medium">
@@ -219,6 +254,20 @@ export function GitHubImport() {
               These reference external registries (br:, ts:) and cannot be
               resolved locally. The converter will use its knowledge of
               AVM/registry modules to generate equivalent Terraform.
+            </p>
+          </div>
+        )}
+
+        {/* CloudFormation: explain that GitHub import currently loads only
+            the chosen entry-point template. Multi-file (nested-stacks)
+            conversion is the upcoming Phase B. */}
+        {isCf && pendingPaths.length > 1 && (
+          <div className="w-full max-w-sm rounded-md border border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/30 p-2.5 text-xs">
+            <p className="text-blue-700 dark:text-blue-400">
+              {pendingPaths.length} CloudFormation files were discovered.
+              For now only the selected entry-point template will be converted —
+              multi-file project conversion (nested stacks) is coming in the
+              next release.
             </p>
           </div>
         )}
@@ -237,7 +286,7 @@ export function GitHubImport() {
           </Button>
           <Button variant="cta" size="sm" onClick={confirmImport}>
             <Upload className="h-3.5 w-3.5" />
-            Load Project
+            {isCf ? "Load Entry Template" : "Load Project"}
           </Button>
         </div>
       </div>
@@ -257,7 +306,7 @@ export function GitHubImport() {
       <div className="text-center">
         <p className="font-medium">Import from GitHub</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Scan a repository for Bicep files
+          Scan a repository for {isCf ? "CloudFormation templates" : "Bicep files"}
         </p>
       </div>
 
@@ -374,7 +423,9 @@ export function GitHubImport() {
       </div>
 
       <p className="text-[10px] text-muted-foreground">
-        Supports .bicep and .bicepparam files (max 50 files, 10MB)
+        {isCf
+          ? "Supports .yaml / .yml / .json / .template files (max 50 files, 10MB)"
+          : "Supports .bicep and .bicepparam files (max 50 files, 10MB)"}
       </p>
     </div>
   );

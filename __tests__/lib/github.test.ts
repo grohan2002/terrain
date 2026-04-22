@@ -373,4 +373,119 @@ describe("fetchRepoTree", () => {
     expect(result.files).not.toHaveProperty("broken.bicep");
     expect(result.stats.bicepFilesFound).toBe(1);
   });
+
+  // --------------------------------------------------------------------
+  // CloudFormation source format
+  // --------------------------------------------------------------------
+
+  describe("sourceFormat: cloudformation", () => {
+    function mockTreeWithMixedFiles() {
+      mockFetch([
+        { url: /\/repos\/owner\/repo$/, status: 200, body: { default_branch: "main" } },
+        {
+          url: /git\/trees\/main\?recursive=1/,
+          status: 200,
+          body: {
+            tree: [
+              { path: "README.md", type: "blob", sha: "a", size: 100, url: "", mode: "100644" },
+              { path: "main.bicep", type: "blob", sha: "b", size: 200, url: "", mode: "100644" },
+              { path: "templates/network.yaml", type: "blob", sha: "c", size: 300, url: "", mode: "100644" },
+              { path: "templates/storage.yml", type: "blob", sha: "d", size: 250, url: "", mode: "100644" },
+              { path: "stacks/iam.json", type: "blob", sha: "e", size: 180, url: "", mode: "100644" },
+              { path: "package.json", type: "blob", sha: "f", size: 50, url: "", mode: "100644" },
+              { path: "old.template", type: "blob", sha: "g", size: 80, url: "", mode: "100644" },
+            ],
+            truncated: false,
+          },
+        },
+        { url: /raw\.githubusercontent\.com/, status: 200, body: 'Resources:\n  X:\n    Type: "AWS::S3::Bucket"' },
+      ]);
+    }
+
+    it("filters CloudFormation files when sourceFormat is cloudformation", async () => {
+      mockTreeWithMixedFiles();
+      const result = await fetchRepoTree({
+        owner: "owner",
+        repo: "repo",
+        sourceFormat: "cloudformation",
+      });
+
+      // .yaml/.yml/.json/.template are accepted; .bicep / README.md / package.json are not.
+      // package.json is included because the filter is extension-based — that's
+      // the documented contract; users rely on the subdirectory option to scope.
+      expect(result.files).toHaveProperty("templates/network.yaml");
+      expect(result.files).toHaveProperty("templates/storage.yml");
+      expect(result.files).toHaveProperty("stacks/iam.json");
+      expect(result.files).toHaveProperty("old.template");
+      expect(result.files).toHaveProperty("package.json"); // .json caught
+      expect(result.files).not.toHaveProperty("main.bicep");
+      expect(result.files).not.toHaveProperty("README.md");
+      expect(result.stats.sourceFormat).toBe("cloudformation");
+      expect(result.stats.sourceFilesFound).toBe(5);
+      // back-compat alias
+      expect(result.stats.bicepFilesFound).toBe(5);
+    });
+
+    it("defaults to bicep filtering when sourceFormat is omitted", async () => {
+      mockTreeWithMixedFiles();
+      const result = await fetchRepoTree({ owner: "owner", repo: "repo" });
+
+      expect(result.files).toHaveProperty("main.bicep");
+      expect(result.files).not.toHaveProperty("templates/network.yaml");
+      expect(result.stats.sourceFormat).toBe("bicep");
+      expect(result.stats.sourceFilesFound).toBe(1);
+    });
+
+    it("error message mentions CloudFormation extensions when none found", async () => {
+      mockFetch([
+        { url: /\/repos\/owner\/repo$/, status: 200, body: { default_branch: "main" } },
+        {
+          url: /git\/trees\/main\?recursive=1/,
+          status: 200,
+          body: {
+            tree: [
+              { path: "README.md", type: "blob", sha: "a", size: 100, url: "", mode: "100644" },
+              { path: "main.bicep", type: "blob", sha: "b", size: 200, url: "", mode: "100644" },
+            ],
+            truncated: false,
+          },
+        },
+      ]);
+
+      await expect(
+        fetchRepoTree({ owner: "owner", repo: "repo", sourceFormat: "cloudformation" }),
+      ).rejects.toThrow(/yaml.*yml.*json.*template/);
+    });
+
+    it("subdirectory + sourceFormat filter together", async () => {
+      mockFetch([
+        { url: /\/repos\/owner\/repo$/, status: 200, body: { default_branch: "main" } },
+        {
+          url: /git\/trees\/main\?recursive=1/,
+          status: 200,
+          body: {
+            tree: [
+              { path: "infra/cf/main.yaml", type: "blob", sha: "a", size: 100, url: "", mode: "100644" },
+              { path: "infra/bicep/main.bicep", type: "blob", sha: "b", size: 100, url: "", mode: "100644" },
+              { path: "src/index.json", type: "blob", sha: "c", size: 100, url: "", mode: "100644" },
+            ],
+            truncated: false,
+          },
+        },
+        { url: /raw\.githubusercontent\.com/, status: 200, body: 'Resources: {}' },
+      ]);
+
+      const result = await fetchRepoTree({
+        owner: "owner",
+        repo: "repo",
+        subdirectory: "infra/cf",
+        sourceFormat: "cloudformation",
+      });
+
+      // Subdirectory prefix is stripped from returned keys
+      expect(result.files).toHaveProperty("main.yaml");
+      expect(Object.keys(result.files)).toHaveLength(1);
+      expect(result.stats.subdirectory).toBe("infra/cf");
+    });
+  });
 });

@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { repoUrl, branch, subdirectory, token } = parsed.data;
+  const { repoUrl, branch, subdirectory, token, sourceFormat } = parsed.data;
 
   // -------------------------------------------------------------------------
   // Parse repo URL
@@ -70,8 +70,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  log.info({ ip, owner, repo, branch, subdirectory }, "GitHub scan started");
-  auditLog("github_scan.started", { owner, repo, branch, subdirectory }, undefined, ip);
+  log.info(
+    { ip, owner, repo, branch, subdirectory, sourceFormat },
+    "GitHub scan started",
+  );
+  auditLog(
+    "github_scan.started",
+    { owner, repo, branch, subdirectory, sourceFormat },
+    undefined,
+    ip,
+  );
 
   // -------------------------------------------------------------------------
   // Fetch tree + file contents
@@ -83,18 +91,35 @@ export async function POST(request: NextRequest) {
       branch,
       subdirectory,
       token,
+      sourceFormat,
     });
 
-    // Detect entry point using existing heuristics
-    const entryPoint = detectEntryPoint(result.files);
+    // Detect entry point. For Bicep we use the existing module-aware heuristic;
+    // for CloudFormation we use a minimal "common-name first, then alphabetic"
+    // heuristic until lib/cf-modules.ts (Phase B) ships a smarter resolver.
+    const entryPoint =
+      sourceFormat === "cloudformation"
+        ? detectCfEntryPointBasic(result.files)
+        : detectEntryPoint(result.files);
 
     log.info(
-      { owner, repo, bicepFiles: result.stats.bicepFilesFound, branch: result.stats.branch },
+      {
+        owner,
+        repo,
+        sourceFiles: result.stats.sourceFilesFound,
+        branch: result.stats.branch,
+        sourceFormat,
+      },
       "GitHub scan completed",
     );
     auditLog(
       "github_scan.completed",
-      { owner, repo, bicepFiles: result.stats.bicepFilesFound },
+      {
+        owner,
+        repo,
+        sourceFiles: result.stats.sourceFilesFound,
+        sourceFormat,
+      },
       undefined,
       ip,
     );
@@ -126,4 +151,32 @@ export async function POST(request: NextRequest) {
 
     return Response.json({ error: message }, { status });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Minimal CloudFormation entry-point heuristic for Phase A. Phase B will
+// replace this with a nested-stack-aware resolver in lib/cf-modules.ts.
+// Priority: main.* / template.* in the root → sole root file → first root
+// file alphabetically → first file overall.
+// ---------------------------------------------------------------------------
+function detectCfEntryPointBasic(files: Record<string, string>): string {
+  const paths = Object.keys(files);
+  if (paths.length === 0) return "";
+  const isRoot = (p: string) => !p.includes("/");
+  const PREFERRED = [
+    "main.yaml",
+    "main.yml",
+    "main.json",
+    "main.template",
+    "template.yaml",
+    "template.yml",
+    "template.json",
+    "template.template",
+  ];
+  for (const name of PREFERRED) {
+    if (paths.includes(name)) return name;
+  }
+  const rootFiles = paths.filter(isRoot).sort();
+  if (rootFiles.length > 0) return rootFiles[0];
+  return paths.sort()[0];
 }
