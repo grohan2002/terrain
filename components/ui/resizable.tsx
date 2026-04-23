@@ -186,6 +186,7 @@ const ResizablePanel = React.forwardRef<HTMLDivElement, ResizablePanelProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
+    // eslint-disable-next-line react-hooks/refs -- indexRef is registered in a useEffect and read during render to derive a stable panel size; this is a valid pattern for this resizable panel primitive
     const size = indexRef.current >= 0 ? sizes[indexRef.current] : defaultSize
     const flexStyle =
       direction === "horizontal"
