@@ -5,7 +5,7 @@
 import type { CostInfo } from "./types";
 export type { CostInfo };
 
-/** Cost per million tokens (USD) for Claude Sonnet. */
+/** Cost per million tokens (USD). Opus tiers are ~5× Sonnet. */
 const PRICING = {
   "claude-sonnet-4-20250514": {
     input: 3.0,
@@ -19,9 +19,27 @@ const PRICING = {
     cacheRead: 0.08,
     cacheWrite: 1.0,
   },
+  "claude-opus-4-7": {
+    input: 15.0,
+    output: 75.0,
+    cacheRead: 1.5,
+    cacheWrite: 18.75,
+  },
 } as const;
 
 type ModelId = keyof typeof PRICING;
+
+/**
+ * Look up pricing by model ID, with a fuzzy match for Opus snapshots whose
+ * exact ID might differ (e.g. `claude-opus-4-7-20260115`). Keeps `OPUS_MODEL_ID`
+ * overridable in env without forcing a cost.ts edit per release.
+ */
+function pricingFor(model: string): typeof PRICING[ModelId] {
+  if (model in PRICING) return PRICING[model as ModelId];
+  if (model.startsWith("claude-opus-4")) return PRICING["claude-opus-4-7"];
+  if (model.startsWith("claude-haiku-4")) return PRICING["claude-haiku-4-5-20251001"];
+  return PRICING["claude-sonnet-4-20250514"];
+}
 
 export function calculateCost(
   model: string,
@@ -30,7 +48,7 @@ export function calculateCost(
   cacheReadTokens = 0,
   cacheWriteTokens = 0,
 ): CostInfo {
-  const pricing = PRICING[model as ModelId] ?? PRICING["claude-sonnet-4-20250514"];
+  const pricing = pricingFor(model);
 
   const totalCostUsd =
     (inputTokens / 1_000_000) * pricing.input +
@@ -64,6 +82,7 @@ export function formatTokens(count: number): string {
 export function formatModel(model: string): string {
   if (model.startsWith("claude-sonnet-4")) return "Claude Sonnet 4";
   if (model.startsWith("claude-haiku-4")) return "Claude Haiku 4.5";
+  if (model.startsWith("claude-opus-4")) return "Claude Opus 4.7";
   return model;
 }
 

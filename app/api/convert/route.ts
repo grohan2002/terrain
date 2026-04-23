@@ -78,16 +78,16 @@ function handleSingleFile(
     );
   }
 
-  const { bicepContent, apiKey, sourceFormat } = parsed.data;
+  const { bicepContent, apiKey, sourceFormat, expertMode } = parsed.data;
   const isCloudFormation = sourceFormat === "cloudformation";
 
   log.info(
-    { ip, contentLength: bicepContent.length, sourceFormat },
+    { ip, contentLength: bicepContent.length, sourceFormat, expertMode },
     "Conversion started",
   );
   auditLog(
     "conversion.started",
-    { contentLength: bicepContent.length, sourceFormat },
+    { contentLength: bicepContent.length, sourceFormat, expertMode },
     undefined,
     ip,
   );
@@ -138,7 +138,7 @@ function handleSingleFile(
 
     const streamFn = isCloudFormation ? chatStreamCloudFormation : chatStream;
 
-    streamFn(bicepContent, wrappedSendEvent, signal, apiKey)
+    streamFn(bicepContent, wrappedSendEvent, signal, apiKey, { expertMode })
       .then(() => {
         log.info({ sourceFormat }, "Conversion completed");
         auditLog(
@@ -197,7 +197,7 @@ function handleMultiFile(
     );
   }
 
-  const { bicepFiles, apiKey, sourceFormat } = parsed.data;
+  const { bicepFiles, apiKey, sourceFormat, expertMode } = parsed.data;
   const fileCount = Object.keys(bicepFiles).length;
   const isCloudFormation = sourceFormat === "cloudformation";
   // entryPoint default depends on sourceFormat
@@ -205,12 +205,12 @@ function handleMultiFile(
     parsed.data.entryPoint ?? (isCloudFormation ? "main.yaml" : "main.bicep");
 
   log.info(
-    { ip, fileCount, entryPoint, sourceFormat },
+    { ip, fileCount, entryPoint, sourceFormat, expertMode },
     "Multi-file conversion started",
   );
   auditLog(
     "conversion.multi_started",
-    { fileCount, entryPoint, sourceFormat },
+    { fileCount, entryPoint, sourceFormat, expertMode },
     undefined,
     ip,
   );
@@ -265,7 +265,7 @@ function handleMultiFile(
       ? chatStreamCloudFormationMultiFile
       : chatStreamMultiFile;
 
-    streamFn(bicepFiles, entryPoint, wrappedSendEvent, signal, apiKey)
+    streamFn(bicepFiles, entryPoint, wrappedSendEvent, signal, apiKey, { expertMode })
       .then(() => {
         log.info({ sourceFormat }, "Multi-file conversion completed");
         auditLog(

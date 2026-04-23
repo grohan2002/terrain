@@ -20,8 +20,35 @@ export type StreamEvent =
   | { type: "terraform_output"; files: TerraformFiles }
   | { type: "validation"; passed: boolean; output: string }
   | { type: "progress"; step: number; total: number; label: string }
+  | { type: "coverage_report"; report: CoverageReportWire }
   | { type: "done"; fullReply: string; toolCalls: ToolCallInfo[]; costInfo?: CostInfo; model?: string }
   | { type: "error"; message: string };
+
+/**
+ * Wire-format coverage report sent after a conversion completes. Mirrors
+ * `lib/coverage.ts` → `CoverageReport` but drops the opaque regex-matched
+ * SourceResource / GeneratedResource shapes in favour of plain data so the
+ * UI can render without the lib runtime.
+ */
+export interface CoverageReportWire {
+  /** Source resources we expected to see mapped into the output. */
+  expected: Array<{
+    sourceType: string;
+    logicalName: string;
+    /** `null` = no TF equivalent; `undefined` = not in built-in map. */
+    expectedTfType: string | null | undefined;
+  }>;
+  /** TF `resource "type" "name"` headers actually generated. */
+  generated: Array<{ tfType: string; tfName: string; file: string }>;
+  /** Source resources matched to a generated TF block of the expected type. */
+  matched: Array<{ sourceType: string; logicalName: string }>;
+  /** Expected source resources whose TF type did not appear in the output. */
+  missing: Array<{ sourceType: string; logicalName: string }>;
+  /** Source types we had no mapping for — excluded from the coverage score. */
+  unmappedSourceTypes: string[];
+  /** Score in [0, 1]. */
+  coverage: number;
+}
 
 /** Overall conversion lifecycle status. */
 export type ConversionStatus =

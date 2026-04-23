@@ -31,7 +31,7 @@ describe("bicepTools", () => {
 
   it("every tool has a non-empty description", () => {
     for (const tool of bicepTools) {
-      expect(tool.description.length, `${tool.name} description`).toBeGreaterThan(10);
+      expect(tool.description!.length, `${tool.name} description`).toBeGreaterThan(10);
     }
   });
 

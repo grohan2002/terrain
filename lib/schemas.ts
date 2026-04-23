@@ -14,6 +14,11 @@ export const ConvertRequestSchema = z.object({
    * holds CF YAML or JSON and dispatch goes to the CF pipeline.
    */
   sourceFormat: z.enum(["bicep", "cloudformation"]).default("bicep"),
+  /**
+   * Expert Mode — opt into Claude Opus 4.7 for the whole run. Default false
+   * (uses the cost-optimal Haiku/Sonnet routing). ~5× the cost of a standard run.
+   */
+  expertMode: z.boolean().default(false),
 });
 
 /** POST /api/convert — multi-file (Bicep project or CloudFormation nested-stacks) */
@@ -31,6 +36,8 @@ export const ConvertMultiFileRequestSchema = z.object({
    * and dispatched to the CF multi-file pipeline.
    */
   sourceFormat: z.enum(["bicep", "cloudformation"]).default("bicep"),
+  /** Expert Mode — see ConvertRequestSchema above. */
+  expertMode: z.boolean().default(false),
 });
 
 /** Azure Service Principal credentials for deployment. */

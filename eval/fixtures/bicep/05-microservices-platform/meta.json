@@ -1,0 +1,10 @@
+{
+  "name": "bicep/05-microservices-platform",
+  "sourceFormat": "bicep",
+  "inputFile": "input.bicep",
+  "description": "Microservices platform — Container Apps + Cosmos + Key Vault + App Insights. 12 resources.",
+  "expectedResourceCount": 12,
+  "maxCostUsd": 0.35,
+  "maxRounds": 25,
+  "expectValidationPass": true
+}

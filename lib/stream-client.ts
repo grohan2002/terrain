@@ -5,7 +5,7 @@
 // typed callbacks to the UI layer.
 // ---------------------------------------------------------------------------
 
-import type { BicepFiles, StreamEvent, ToolCallInfo, TerraformFiles, CostInfo, SourceFormat } from "./types";
+import type { BicepFiles, StreamEvent, ToolCallInfo, TerraformFiles, CostInfo, SourceFormat, CoverageReportWire } from "./types";
 
 // ---------------------------------------------------------------------------
 // Callback interface
@@ -18,6 +18,7 @@ export interface ConversionCallbacks {
   onTerraformOutput: (files: TerraformFiles) => void;
   onValidation: (passed: boolean, output: string) => void;
   onProgress: (step: number, total: number, label: string) => void;
+  onCoverageReport?: (report: CoverageReportWire) => void;
   onDone: (fullReply: string, toolCalls: ToolCallInfo[], costInfo?: CostInfo, model?: string) => void;
   onError: (message: string) => void;
 }
@@ -32,6 +33,7 @@ export async function sendConversionStream(
   signal?: AbortSignal,
   apiKey?: string,
   sourceFormat: SourceFormat = "bicep",
+  expertMode = false,
 ): Promise<void> {
   let response: Response;
 
@@ -42,6 +44,7 @@ export async function sendConversionStream(
       body: JSON.stringify({
         bicepContent,
         sourceFormat,
+        expertMode,
         ...(apiKey ? { apiKey } : {}),
       }),
       signal,
@@ -147,6 +150,7 @@ export async function sendMultiFileConversionStream(
   signal?: AbortSignal,
   apiKey?: string,
   sourceFormat: SourceFormat = "bicep",
+  expertMode = false,
 ): Promise<void> {
   let response: Response;
 
@@ -158,6 +162,7 @@ export async function sendMultiFileConversionStream(
         bicepFiles,
         entryPoint,
         sourceFormat,
+        expertMode,
         ...(apiKey ? { apiKey } : {}),
       }),
       signal,
@@ -265,6 +270,9 @@ function dispatchEvent(
       break;
     case "progress":
       callbacks.onProgress(event.step, event.total, event.label);
+      break;
+    case "coverage_report":
+      callbacks.onCoverageReport?.(event.report);
       break;
     case "done":
       callbacks.onDone(event.fullReply, event.toolCalls, event.costInfo, event.model);

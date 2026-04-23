@@ -80,6 +80,7 @@ export function CodeEditor({
               [/./, "string"],
             ],
           },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Monaco's language-registration types are too generic to name here
         } as any);
       }
 
@@ -127,6 +128,7 @@ export function CodeEditor({
               [/./, "string"],
             ],
           },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Monaco's language-registration types are too generic to name here
         } as any);
       }
 

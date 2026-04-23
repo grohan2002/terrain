@@ -22,10 +22,41 @@ import { SYSTEM_PROMPT, SYSTEM_PROMPT_MULTI_FILE } from "./system-prompt";
 import { withRetry } from "../retry";
 import { getTerraformMcpTools, isTerraformMcpTool, callMcpTool } from "../mcp/clients";
 import { calculateCost, addCosts, type CostInfo } from "../cost";
-import { selectModel, selectModelMultiFile } from "../model-router";
+import {
+  selectModelWithExpertMode,
+  selectModelMultiFileWithExpertMode,
+} from "../model-router";
 import { buildDependencyGraph, buildMultiFileUserMessage, summarizeContext } from "../bicep-modules";
 import { logger } from "../logger";
-import type { BicepFiles, StreamEvent, ToolCallInfo } from "../types";
+import type { BicepFiles, StreamEvent, ToolCallInfo, CoverageReportWire } from "../types";
+import {
+  prefetchSchemasForSource,
+  prefetchSchemasForMultiFile,
+} from "../schema-prefetch";
+import { computeCoverageFromContent } from "../coverage";
+import { extractSourceResourceInventoryMultiFile } from "../source-resource-inventory";
+import { extractGeneratedResources } from "../generated-resource-inventory";
+import { computeCoverage } from "../coverage";
+
+/** Convert a CoverageReport into its SSE wire shape (drops extra fields). */
+function toCoverageWire(
+  r: ReturnType<typeof computeCoverage>,
+): CoverageReportWire {
+  return {
+    expected: r.expected,
+    generated: r.generated,
+    matched: r.matched.map((m) => ({
+      sourceType: m.sourceType,
+      logicalName: m.logicalName,
+    })),
+    missing: r.missing.map((m) => ({
+      sourceType: m.sourceType,
+      logicalName: m.logicalName,
+    })),
+    unmappedSourceTypes: r.unmappedSourceTypes,
+    coverage: r.coverage,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Isolated temp directory per conversion — prevents file accumulation
@@ -171,9 +202,10 @@ export async function chatStream(
   emit: (event: StreamEvent) => void,
   signal?: AbortSignal,
   apiKey?: string,
+  opts: { expertMode?: boolean } = {},
 ): Promise<void> {
   const client = apiKey ? new Anthropic({ apiKey }) : new Anthropic();
-  const model = selectModel(bicepContent);
+  const model = selectModelWithExpertMode(bicepContent, opts);
 
   // Accumulate full text and tool call info across rounds
   let fullReply = "";
@@ -210,25 +242,55 @@ export async function chatStream(
   const mcpTools = await getTerraformMcpTools();
   const toolsForClaude = [...bicepTools, ...mcpTools];
 
+  // Pre-fetch provider schemas for every azurerm_* type we expect to emit.
+  // Eliminates the 3–5 wasted rounds the agent otherwise spends on mid-run
+  // get_provider_details calls. Degrades to no-op if MCP is unavailable.
+  const prefetch = await prefetchSchemasForSource({
+    sourceContent: bicepContent,
+    sourceFormat: "bicep",
+  });
+  if (prefetch.hasContent) {
+    logger.info(
+      { fetched: prefetch.fetched, skipped: prefetch.skipped, tokens: prefetch.tokens },
+      "Schema prefetch populated",
+    );
+  }
+
   // Build initial messages array — tell Claude the exact output directory
+  const userText =
+    "Convert the following Azure Bicep template to Terraform/OpenTofu HCL. " +
+    "The Bicep content is provided inline below — skip read_bicep_file and start with parse_bicep. " +
+    "Batch your tool calls aggressively (all lookups in one turn, all generates in one turn).\n\n" +
+    `IMPORTANT: Use this output directory for ALL file operations (write_terraform_files, validate_terraform, format_terraform): ${outputDir}\n\n` +
+    "```bicep\n" +
+    bicepContent +
+    "\n```" +
+    (prefetch.hasContent ? "\n\n" + prefetch.promptBlock : "");
+
   const messages: MessageParam[] = [
     {
       role: "user",
-      content: [
-        {
-          type: "text",
-          text:
-            "Convert the following Azure Bicep template to Terraform/OpenTofu HCL. " +
-            "The Bicep content is provided inline below — skip read_bicep_file and start with parse_bicep. " +
-            "Batch your tool calls aggressively (all lookups in one turn, all generates in one turn).\n\n" +
-            `IMPORTANT: Use this output directory for ALL file operations (write_terraform_files, validate_terraform, format_terraform): ${outputDir}\n\n` +
-            "```bicep\n" +
-            bicepContent +
-            "\n```",
-        },
-      ],
+      content: [{ type: "text", text: userText }],
     },
   ];
+
+  // Emits the coverage_report SSE event based on the final accumulated
+  // terraform files. Called right before `done` in every exit path.
+  const emitCoverage = (): void => {
+    try {
+      const report = computeCoverageFromContent({
+        sourceContent: bicepContent,
+        sourceFormat: "bicep",
+        terraformFiles: accumulatedTerraformFiles,
+      });
+      emit({ type: "coverage_report", report: toCoverageWire(report) });
+    } catch (err) {
+      logger.warn(
+        { error: err instanceof Error ? err.message : String(err) },
+        "coverage_report emit failed",
+      );
+    }
+  };
 
   let round = 0;
 
@@ -301,6 +363,7 @@ export async function chatStream(
 
     // If the model did not request tool use, we are done
     if (finalMessage.stop_reason !== "tool_use") {
+      emitCoverage();
       emit({
         type: "done",
         fullReply,
@@ -390,6 +453,7 @@ export async function chatStream(
   }
 
   // Exhausted max rounds
+  emitCoverage();
   emit({
     type: "done",
     fullReply:
@@ -418,9 +482,10 @@ export async function chatStreamMultiFile(
   emit: (event: StreamEvent) => void,
   signal?: AbortSignal,
   apiKey?: string,
+  opts: { expertMode?: boolean } = {},
 ): Promise<void> {
   const client = apiKey ? new Anthropic({ apiKey }) : new Anthropic();
-  const model = selectModelMultiFile();
+  const model = selectModelMultiFileWithExpertMode(opts);
 
   // Validate token budget
   const ctx = summarizeContext(bicepFiles, entryPoint);
@@ -482,9 +547,23 @@ export async function chatStreamMultiFile(
   const mcpTools = await getTerraformMcpTools();
   const toolsForClaude = [...bicepTools, ...mcpTools];
 
+  // Pre-fetch provider schemas for every azurerm_* type that appears anywhere
+  // in the project — shared across modules to avoid redundant mid-run fetches.
+  const prefetch = await prefetchSchemasForMultiFile({
+    files: bicepFiles,
+    sourceFormat: "bicep",
+  });
+  if (prefetch.hasContent) {
+    logger.info(
+      { fetched: prefetch.fetched, skipped: prefetch.skipped, tokens: prefetch.tokens },
+      "Schema prefetch populated (multi-file Bicep)",
+    );
+  }
+
   // Build initial messages array — inject output directory path
   const userMessageWithDir = userMessage +
-    `\n\nIMPORTANT: Use this output directory for ALL file operations (write_terraform_files, validate_terraform, format_terraform): ${outputDir}`;
+    `\n\nIMPORTANT: Use this output directory for ALL file operations (write_terraform_files, validate_terraform, format_terraform): ${outputDir}` +
+    (prefetch.hasContent ? "\n\n" + prefetch.promptBlock : "");
 
   const messages: MessageParam[] = [
     {
@@ -492,6 +571,30 @@ export async function chatStreamMultiFile(
       content: [{ type: "text", text: userMessageWithDir }],
     },
   ];
+
+  // Emit coverage_report based on accumulated files + multi-file source inventory.
+  const emitCoverage = (): void => {
+    try {
+      const sourceResources = extractSourceResourceInventoryMultiFile(
+        bicepFiles,
+        "bicep",
+      );
+      const generatedResources = extractGeneratedResources(
+        accumulatedTerraformFiles,
+      );
+      const report = computeCoverage({
+        sourceResources,
+        generatedResources,
+        sourceFormat: "bicep",
+      });
+      emit({ type: "coverage_report", report: toCoverageWire(report) });
+    } catch (err) {
+      logger.warn(
+        { error: err instanceof Error ? err.message : String(err) },
+        "coverage_report emit failed (multi-file)",
+      );
+    }
+  };
 
   let round = 0;
 
@@ -559,6 +662,7 @@ export async function chatStreamMultiFile(
     totalCost = addCosts(totalCost, roundCost);
 
     if (finalMessage.stop_reason !== "tool_use") {
+      emitCoverage();
       emit({
         type: "done",
         fullReply,
@@ -648,6 +752,7 @@ export async function chatStreamMultiFile(
   }
 
   // Exhausted max rounds
+  emitCoverage();
   emit({
     type: "done",
     fullReply:

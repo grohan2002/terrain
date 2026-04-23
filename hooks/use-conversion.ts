@@ -69,6 +69,10 @@ export function useConversion() {
           useConversionStore.getState().setProgress({ step, total, label });
         },
 
+        onCoverageReport: (report) => {
+          useConversionStore.getState().setCoverageReport(report);
+        },
+
         onDone: (fullReply, toolCalls, costInfo) => {
           const s = useConversionStore.getState();
           s.setStatus("done");
@@ -158,6 +162,7 @@ export function useConversion() {
             controller.signal,
             apiKey,
             store.sourceFormat,
+            store.expertMode,
           );
         } else {
           await sendConversionStream(
@@ -166,6 +171,7 @@ export function useConversion() {
             controller.signal,
             apiKey,
             store.sourceFormat,
+            store.expertMode,
           );
         }
       } catch (err) {

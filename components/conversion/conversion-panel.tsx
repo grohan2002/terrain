@@ -114,9 +114,12 @@ export function ConversionPanel() {
   const status = useConversionStore((s) => s.status);
   const deploymentStatus = useConversionStore((s) => s.deploymentStatus);
   const costInfo = useConversionStore((s) => s.costInfo);
+  const coverageReport = useConversionStore((s) => s.coverageReport);
   const setBicepContent = useConversionStore((s) => s.setBicepContent);
   const sourceFormat = useConversionStore((s) => s.sourceFormat);
   const setSourceFormat = useConversionStore((s) => s.setSourceFormat);
+  const expertMode = useConversionStore((s) => s.expertMode);
+  const setExpertMode = useConversionStore((s) => s.setExpertMode);
   const isMultiFile = useConversionStore((s) => s.isMultiFile);
   const bicepFiles = useConversionStore((s) => s.bicepFiles);
   const entryPoint = useConversionStore((s) => s.entryPoint);
@@ -245,6 +248,7 @@ export function ConversionPanel() {
     }
 
     // Need API key first, then Azure config
+    // eslint-disable-next-line react-hooks/immutability -- useRef.current mutation is the intended React pattern for dialog-state pass-through
     pendingActionRef.current = "deploy";
     setApiKeyInput("");
     setShowApiKeyDialog(true);
@@ -386,6 +390,35 @@ export function ConversionPanel() {
               CloudFormation
             </button>
           </div>
+          {/* Expert Mode pill — opts into Claude Opus 4.7 for the run. */}
+          <Tooltip>
+            <TooltipTrigger
+              onClick={() => setExpertMode(!expertMode)}
+              disabled={isConverting || isDeploying}
+              className={
+                "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50 " +
+                (expertMode
+                  ? "border-violet-600 bg-violet-600 text-white hover:bg-violet-700"
+                  : "border-border text-muted-foreground hover:bg-accent")
+              }
+              aria-pressed={expertMode}
+              aria-label="Toggle Expert Mode"
+            >
+              <span aria-hidden>\u26a1</span>
+              {expertMode ? "Expert" : "Standard"}
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs text-xs p-3 space-y-1">
+              <p className="font-semibold">Expert Mode</p>
+              <p className="text-muted-foreground">
+                Upgrades this run to <span className="font-mono">Claude Opus 4.7</span> for the
+                gnarliest templates. Higher accuracy, <strong>~5\u00d7 the cost</strong> of a standard run.
+              </p>
+              <p className="text-muted-foreground">
+                Default (Standard) routes simple single-resource files to Haiku and everything
+                else to Sonnet 4.
+              </p>
+            </TooltipContent>
+          </Tooltip>
           <FileCode className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">
             {isMultiFile
@@ -437,6 +470,54 @@ export function ConversionPanel() {
                 <p className="pt-1 border-t border-border font-semibold">
                   Total: {formatCost(costInfo.totalCostUsd)}
                 </p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {coverageReport && (
+            <Tooltip>
+              <TooltipTrigger
+                className={
+                  "inline-flex items-center rounded-md border px-2.5 py-0.5 text-[10px] font-mono transition-colors hover:bg-accent cursor-default " +
+                  (coverageReport.coverage >= 1
+                    ? "border-green-600/40 text-green-700 dark:text-green-400"
+                    : coverageReport.coverage > 0
+                      ? "border-amber-600/40 text-amber-700 dark:text-amber-400"
+                      : "border-red-600/40 text-red-700 dark:text-red-400")
+                }
+              >
+                {coverageReport.coverage >= 1
+                  ? `\u2713 ${coverageReport.matched.length}/${coverageReport.matched.length} coverage`
+                  : `\u26a0 ${coverageReport.matched.length}/${coverageReport.matched.length + coverageReport.missing.length} coverage`}
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs space-y-1 p-3 max-w-sm">
+                <p className="font-semibold">Resource coverage</p>
+                <p className="text-muted-foreground">
+                  {(coverageReport.coverage * 100).toFixed(0)}% of source resources matched to generated Terraform blocks.
+                </p>
+                {coverageReport.missing.length > 0 && (
+                  <div className="pt-1 border-t border-border">
+                    <p className="font-semibold text-amber-700 dark:text-amber-400">
+                      Missing ({coverageReport.missing.length}):
+                    </p>
+                    <ul className="mt-0.5 space-y-0.5">
+                      {coverageReport.missing.slice(0, 8).map((m) => (
+                        <li key={`${m.logicalName}-${m.sourceType}`} className="font-mono text-[10px]">
+                          {m.logicalName} <span className="text-muted-foreground">({m.sourceType})</span>
+                        </li>
+                      ))}
+                      {coverageReport.missing.length > 8 && (
+                        <li className="text-muted-foreground">
+                          \u2026 and {coverageReport.missing.length - 8} more
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+                {coverageReport.unmappedSourceTypes.length > 0 && (
+                  <p className="pt-1 border-t border-border text-muted-foreground">
+                    {coverageReport.unmappedSourceTypes.length} source type(s) had no built-in mapping — excluded from the score.
+                  </p>
+                )}
               </TooltipContent>
             </Tooltip>
           )}
@@ -523,6 +604,14 @@ export function ConversionPanel() {
           )}
         </div>
       </div>
+
+      {expertMode && (
+        <div className="border-b border-violet-600/30 bg-violet-600/5 px-4 py-1.5 text-[11px] text-violet-700 dark:text-violet-300 shrink-0">
+          <span aria-hidden className="mr-1.5">\u26a1</span>
+          Expert Mode is on — this run will use{" "}
+          <span className="font-mono">Claude Opus 4.7</span> (~5\u00d7 the cost of Standard).
+        </div>
+      )}
 
       {/* Main editor area */}
       <div className="flex flex-1 min-h-0">

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateCost, addCosts, formatCost } from "@/lib/cost";
+import { calculateCost, addCosts, formatCost, formatModel } from "@/lib/cost";
 
 describe("calculateCost", () => {
   it("calculates Sonnet cost correctly", () => {
@@ -43,6 +43,34 @@ describe("calculateCost", () => {
     const cost = calculateCost("unknown-model", 1_000_000, 0);
     // Should use Sonnet pricing: $3.00
     expect(cost.totalCostUsd).toBeCloseTo(3.0, 2);
+  });
+
+  it("calculates Opus cost correctly (5× Sonnet)", () => {
+    const cost = calculateCost("claude-opus-4-7", 1_000_000, 100_000);
+    // $15 input + $7.5 output = $22.5
+    expect(cost.totalCostUsd).toBeCloseTo(22.5, 2);
+    expect(cost.model).toBe("claude-opus-4-7");
+  });
+
+  it("matches Opus pricing for snapshot IDs (fuzzy lookup)", () => {
+    const cost = calculateCost("claude-opus-4-7-20260115", 1_000_000, 0);
+    expect(cost.totalCostUsd).toBeCloseTo(15.0, 2);
+  });
+});
+
+describe("formatModel", () => {
+  it("recognises Opus snapshots", () => {
+    expect(formatModel("claude-opus-4-7")).toBe("Claude Opus 4.7");
+    expect(formatModel("claude-opus-4-7-20260115")).toBe("Claude Opus 4.7");
+  });
+
+  it("recognises Sonnet and Haiku", () => {
+    expect(formatModel("claude-sonnet-4-20250514")).toBe("Claude Sonnet 4");
+    expect(formatModel("claude-haiku-4-5-20251001")).toBe("Claude Haiku 4.5");
+  });
+
+  it("returns the raw ID for unknown models", () => {
+    expect(formatModel("claude-something-future")).toBe("claude-something-future");
   });
 });
 

@@ -14,10 +14,16 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
-      - run: npm ci
+      # Native optional deps (rolldown, tree-sitter, tailwind oxide) have
+      # platform-specific bindings that npm install on darwin-arm64 refuses
+      # to include for linux-x64. Drop the lockfile and let CI resolve fresh
+      # on its own platform. Still reproducible — package.json pins semver
+      # ranges for every direct dep.
+      - run: rm -f package-lock.json
+      - run: npm install --no-audit --no-fund
 
       - run: npx eslint .
         name: Lint

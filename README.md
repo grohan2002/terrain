@@ -21,6 +21,8 @@ Terrain is an AI-powered infrastructure modernization platform that converts Azu
 - **Conversion history** — Browse and restore previous conversions with cost data; source-format badge per entry
 - **Role-based access control** — Four-tier RBAC (Viewer → Converter → Deployer → Admin)
 - **Audit logging** — Full audit trail of all actions
+- **Expert Mode** — ⚡ toggle in the top bar that routes the next conversion to **Claude Opus 4.7** for the gnarliest templates. Higher accuracy, ~5× the cost. Standard (default) keeps the cost-optimal Haiku/Sonnet routing. The model ID is overridable via the `OPUS_MODEL_ID` env var (see `.env.example`).
+- **Coverage badge** — Every conversion emits a deterministic resource-coverage report (source resources vs generated TF blocks). Green `✓ N/N coverage` when nothing was dropped, amber `⚠ M/N` with a tooltip listing the missing ones otherwise.
 
 ## Tech Stack
 

@@ -51,6 +51,7 @@ export function AzureConfigDialog({
         const cached = sessionStorage.getItem(AZURE_CONFIG_STORAGE_KEY);
         if (cached) {
           const parsed = JSON.parse(cached) as AzureConfig;
+          // eslint-disable-next-line react-hooks/set-state-in-effect -- sessionStorage hydration; setState sequence is the intended pattern
           setSubscriptionId(parsed.subscriptionId ?? "");
           setTenantId(parsed.tenantId ?? "");
           setClientId(parsed.clientId ?? "");

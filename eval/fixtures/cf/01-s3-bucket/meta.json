@@ -1,0 +1,10 @@
+{
+  "name": "cf/01-s3-bucket",
+  "sourceFormat": "cloudformation",
+  "inputFile": "input.yaml",
+  "description": "Single S3 bucket — minimal CloudFormation smoke test.",
+  "expectedResourceCount": 1,
+  "maxCostUsd": 0.05,
+  "maxRounds": 10,
+  "expectValidationPass": true
+}

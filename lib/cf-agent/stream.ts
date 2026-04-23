@@ -34,14 +34,47 @@ import {
 import type { ToolHandlerCallbacks } from "../agent/tool-handlers";
 import { withRetry } from "../retry";
 import { calculateCost, addCosts, type CostInfo } from "../cost";
-import { selectModel } from "../model-router";
+import {
+  selectModelWithExpertMode,
+  selectModelMultiFileWithExpertMode,
+} from "../model-router";
 import {
   getTerraformMcpTools,
   isTerraformMcpTool,
   callMcpTool,
 } from "../mcp/clients";
 import { logger } from "../logger";
-import type { StreamEvent, ToolCallInfo } from "../types";
+import type { StreamEvent, ToolCallInfo, CoverageReportWire } from "../types";
+import {
+  prefetchSchemasForSource,
+  prefetchSchemasForMultiFile,
+} from "../schema-prefetch";
+import {
+  computeCoverage,
+  computeCoverageFromContent,
+} from "../coverage";
+import { extractSourceResourceInventoryMultiFile } from "../source-resource-inventory";
+import { extractGeneratedResources } from "../generated-resource-inventory";
+
+/** Convert a CoverageReport into its SSE wire shape. */
+function toCoverageWire(
+  r: ReturnType<typeof computeCoverage>,
+): CoverageReportWire {
+  return {
+    expected: r.expected,
+    generated: r.generated,
+    matched: r.matched.map((m) => ({
+      sourceType: m.sourceType,
+      logicalName: m.logicalName,
+    })),
+    missing: r.missing.map((m) => ({
+      sourceType: m.sourceType,
+      logicalName: m.logicalName,
+    })),
+    unmappedSourceTypes: r.unmappedSourceTypes,
+    coverage: r.coverage,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Isolated temp directory per conversion
@@ -99,11 +132,12 @@ export async function chatStreamCloudFormation(
   emit: (event: StreamEvent) => void,
   signal?: AbortSignal,
   apiKey?: string,
+  opts: { expertMode?: boolean } = {},
 ): Promise<void> {
   const client = apiKey ? new Anthropic({ apiKey }) : new Anthropic();
   // Reuse model router — its heuristics (small / simple input → Haiku) apply
-  // equally to CF templates.
-  const model = selectModel(cfContent);
+  // equally to CF templates. Expert Mode promotes every run to Opus 4.7.
+  const model = selectModelWithExpertMode(cfContent, opts);
 
   let fullReply = "";
   const allToolCalls: ToolCallInfo[] = [];
@@ -138,25 +172,52 @@ export async function chatStreamCloudFormation(
   const mcpTools = await getTerraformMcpTools();
   const toolsForClaude = [...cloudformationTools, ...mcpTools];
 
+  // Pre-fetch aws_* provider schemas for every resource type we expect. Kills
+  // the 3–5 wasted rounds the agent otherwise spends on mid-run fetches.
+  const prefetch = await prefetchSchemasForSource({
+    sourceContent: cfContent,
+    sourceFormat: "cloudformation",
+  });
+  if (prefetch.hasContent) {
+    logger.info(
+      { fetched: prefetch.fetched, skipped: prefetch.skipped, tokens: prefetch.tokens },
+      "Schema prefetch populated (CloudFormation)",
+    );
+  }
+
+  const userText =
+    "Convert the following AWS CloudFormation template to Terraform/OpenTofu HCL " +
+    "using the hashicorp/aws provider. The CF content is provided inline below — " +
+    "skip read_cf_template and start with parse_cloudformation. " +
+    "Batch your tool calls aggressively (all lookups in one turn, all generates in one turn).\n\n" +
+    `IMPORTANT: Use this output directory for ALL file operations (write_terraform_files, validate_terraform, format_terraform): ${outputDir}\n\n` +
+    "```\n" +
+    cfContent +
+    "\n```" +
+    (prefetch.hasContent ? "\n\n" + prefetch.promptBlock : "");
+
   const messages: MessageParam[] = [
     {
       role: "user",
-      content: [
-        {
-          type: "text",
-          text:
-            "Convert the following AWS CloudFormation template to Terraform/OpenTofu HCL " +
-            "using the hashicorp/aws provider. The CF content is provided inline below — " +
-            "skip read_cf_template and start with parse_cloudformation. " +
-            "Batch your tool calls aggressively (all lookups in one turn, all generates in one turn).\n\n" +
-            `IMPORTANT: Use this output directory for ALL file operations (write_terraform_files, validate_terraform, format_terraform): ${outputDir}\n\n` +
-            "```\n" +
-            cfContent +
-            "\n```",
-        },
-      ],
+      content: [{ type: "text", text: userText }],
     },
   ];
+
+  const emitCoverage = (): void => {
+    try {
+      const report = computeCoverageFromContent({
+        sourceContent: cfContent,
+        sourceFormat: "cloudformation",
+        terraformFiles: accumulatedTerraformFiles,
+      });
+      emit({ type: "coverage_report", report: toCoverageWire(report) });
+    } catch (err) {
+      logger.warn(
+        { error: err instanceof Error ? err.message : String(err) },
+        "coverage_report emit failed (CF)",
+      );
+    }
+  };
 
   let round = 0;
 
@@ -227,6 +288,7 @@ export async function chatStreamCloudFormation(
       totalCost = addCosts(totalCost, roundCost);
 
       if (finalMessage.stop_reason !== "tool_use") {
+        emitCoverage();
         emit({
           type: "done",
           fullReply,
@@ -312,6 +374,7 @@ export async function chatStreamCloudFormation(
       });
     }
 
+    emitCoverage();
     emit({
       type: "done",
       fullReply:
@@ -343,11 +406,12 @@ export async function chatStreamCloudFormationMultiFile(
   emit: (event: StreamEvent) => void,
   signal?: AbortSignal,
   apiKey?: string,
+  opts: { expertMode?: boolean } = {},
 ): Promise<void> {
   const client = apiKey ? new Anthropic({ apiKey }) : new Anthropic();
-  // Force Sonnet for multi-file projects — the routing heuristic is built for
-  // single Bicep files and undervalues the complexity of multi-stack CF.
-  const model = "claude-sonnet-4-20250514";
+  // Multi-file default is Sonnet (nested-stack reasoning out-of-scope for Haiku);
+  // Expert Mode bumps to Opus 4.7.
+  const model = selectModelMultiFileWithExpertMode(opts);
 
   let fullReply = "";
   const allToolCalls: ToolCallInfo[] = [];
@@ -397,6 +461,18 @@ export async function chatStreamCloudFormationMultiFile(
   const mcpTools = await getTerraformMcpTools();
   const toolsForClaude = [...cloudformationTools, ...mcpTools];
 
+  // Pre-fetch aws_* provider schemas for all CF resource types across nested stacks.
+  const prefetch = await prefetchSchemasForMultiFile({
+    files: cfFiles,
+    sourceFormat: "cloudformation",
+  });
+  if (prefetch.hasContent) {
+    logger.info(
+      { fetched: prefetch.fetched, skipped: prefetch.skipped, tokens: prefetch.tokens },
+      "Schema prefetch populated (multi-file CF)",
+    );
+  }
+
   // Build the multi-file project prompt (dependency graph + files in topo order)
   const graph = buildCloudFormationDependencyGraph(cfFiles);
   const userMessage = buildCloudFormationMultiFileUserMessage(
@@ -407,7 +483,8 @@ export async function chatStreamCloudFormationMultiFile(
   );
   const userMessageWithDir =
     userMessage +
-    `\n\nIMPORTANT: Use this output directory for ALL file operations (write_terraform_files, validate_terraform, format_terraform): ${outputDir}`;
+    `\n\nIMPORTANT: Use this output directory for ALL file operations (write_terraform_files, validate_terraform, format_terraform): ${outputDir}` +
+    (prefetch.hasContent ? "\n\n" + prefetch.promptBlock : "");
 
   const messages: MessageParam[] = [
     {
@@ -415,6 +492,29 @@ export async function chatStreamCloudFormationMultiFile(
       content: [{ type: "text", text: userMessageWithDir }],
     },
   ];
+
+  const emitCoverage = (): void => {
+    try {
+      const sourceResources = extractSourceResourceInventoryMultiFile(
+        cfFiles,
+        "cloudformation",
+      );
+      const generatedResources = extractGeneratedResources(
+        accumulatedTerraformFiles,
+      );
+      const report = computeCoverage({
+        sourceResources,
+        generatedResources,
+        sourceFormat: "cloudformation",
+      });
+      emit({ type: "coverage_report", report: toCoverageWire(report) });
+    } catch (err) {
+      logger.warn(
+        { error: err instanceof Error ? err.message : String(err) },
+        "coverage_report emit failed (multi-file CF)",
+      );
+    }
+  };
 
   let round = 0;
 
@@ -488,6 +588,7 @@ export async function chatStreamCloudFormationMultiFile(
       totalCost = addCosts(totalCost, roundCost);
 
       if (finalMessage.stop_reason !== "tool_use") {
+        emitCoverage();
         emit({
           type: "done",
           fullReply,
@@ -590,6 +691,7 @@ export async function chatStreamCloudFormationMultiFile(
       });
     }
 
+    emitCoverage();
     emit({
       type: "done",
       fullReply:

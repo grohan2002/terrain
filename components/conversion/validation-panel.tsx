@@ -12,6 +12,7 @@ export function ValidationPanel() {
   const validationResult = useConversionStore((s) => s.validationResult);
   const status = useConversionStore((s) => s.status);
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- React Compiler can't verify this useCallback's memoization but it's still correct
   const handleCopy = useCallback(() => {
     if (!validationResult?.output) return;
     navigator.clipboard.writeText(validationResult.output).then(() => {

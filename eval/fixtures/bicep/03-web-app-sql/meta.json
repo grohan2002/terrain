@@ -1,0 +1,10 @@
+{
+  "name": "bicep/03-web-app-sql",
+  "sourceFormat": "bicep",
+  "inputFile": "input.bicep",
+  "description": "App Service + SQL DB — cross-resource references.",
+  "expectedResourceCount": 5,
+  "maxCostUsd": 0.15,
+  "maxRounds": 15,
+  "expectValidationPass": true
+}

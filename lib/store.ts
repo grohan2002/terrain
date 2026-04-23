@@ -27,6 +27,7 @@ import type {
   DeploySummary,
   CostInfo,
   SourceFormat,
+  CoverageReportWire,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -74,6 +75,12 @@ export interface ConversionState {
   costInfo: CostInfo | null;
   deployCostInfo: CostInfo | null;
 
+  // Resource-coverage report from the last conversion.
+  coverageReport: CoverageReportWire | null;
+
+  // Expert Mode — opt-in to Claude Opus 4.7 for the next conversion run.
+  expertMode: boolean;
+
   // ---- Deployment state ----
   deploymentStatus: DeploymentStatus;
   deploymentProgress: DeploymentProgress | null;
@@ -106,6 +113,8 @@ export interface ConversionState {
   setHistory: (history: ConversionHistoryEntry[]) => void;
   setCostInfo: (info: CostInfo | null) => void;
   setDeployCostInfo: (info: CostInfo | null) => void;
+  setCoverageReport: (report: CoverageReportWire | null) => void;
+  setExpertMode: (v: boolean) => void;
   reset: () => void;
   resetConversion: () => void;
 
@@ -139,6 +148,7 @@ const initialConversionState = {
   messages: [] as ConversationMessage[],
   toolCalls: [] as ToolCallInfo[],
   costInfo: null as CostInfo | null,
+  coverageReport: null as CoverageReportWire | null,
 };
 
 const initialDeploymentState = {
@@ -193,6 +203,7 @@ export const useConversionStore = create<ConversionState>()((set) => ({
   bicepFiles: {} as BicepFiles,
   isMultiFile: false,
   entryPoint: "",
+  expertMode: false,
   ...initialConversionState,
   ...initialDeploymentState,
   history: [],
@@ -200,7 +211,8 @@ export const useConversionStore = create<ConversionState>()((set) => ({
   setSourceFormat: (format) =>
     // Toggling source format wipes the current source + output so the user
     // doesn't accidentally submit Bicep content while CF is selected (or vice
-    // versa). History is preserved.
+    // versa). Also resets Expert Mode back to default so an old toggle doesn't
+    // silently carry the ~5× cost over into a fresh pipeline. History preserved.
     set({
       sourceFormat: format,
       bicepContent: "",
@@ -208,6 +220,7 @@ export const useConversionStore = create<ConversionState>()((set) => ({
       bicepFiles: {} as BicepFiles,
       isMultiFile: false,
       entryPoint: "",
+      expertMode: false,
       ...initialConversionState,
     }),
 
@@ -271,6 +284,9 @@ export const useConversionStore = create<ConversionState>()((set) => ({
 
   setCostInfo: (info) => set({ costInfo: info }),
   setDeployCostInfo: (info) => set({ deployCostInfo: info }),
+  setCoverageReport: (report) => set({ coverageReport: report }),
+
+  setExpertMode: (v) => set({ expertMode: v }),
 
   reset: () =>
     set({
@@ -279,6 +295,7 @@ export const useConversionStore = create<ConversionState>()((set) => ({
       bicepFiles: {} as BicepFiles,
       isMultiFile: false,
       entryPoint: "",
+      expertMode: false,
       ...initialConversionState,
       ...initialDeploymentState,
     }),

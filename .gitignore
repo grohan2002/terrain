@@ -41,3 +41,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ephemeral conversion outputs (generated Terraform from past runs; 100s of MB)
+/terraform/
+/terraform-output/
+
+# office temp / lock files
+~$*.pptx
+~$*.docx
+~$*.xlsx
