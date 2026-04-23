@@ -17,7 +17,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      # `npm install` rather than `npm ci` because the lockfile contains
+      # optional native deps (tree-sitter via swagger-ui-react's YAML parser)
+      # whose `resolved`/`integrity` fields are platform-dependent. `npm ci`
+      # strict mode rejects the drift; `npm install` reconciles it.
+      - run: npm install --no-audit --no-fund
 
       - run: npx eslint .
         name: Lint
